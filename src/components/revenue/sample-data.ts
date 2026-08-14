@@ -1,0 +1,60 @@
+import type { Revenue } from "@/components/revenue/types";
+
+export const SAMPLE_REVENUES: Revenue[] = [
+  {
+    id: "rev-1",
+    sourceType: "ad_revenue",
+    amount: 128000,
+    expense: 12000,
+    recordDate: "2025-06-05",
+    memo: "TikTokクリエイターファンド 5月分",
+  },
+  {
+    id: "rev-2",
+    sourceType: "affiliate",
+    amount: 45000,
+    expense: 3000,
+    recordDate: "2025-06-12",
+    memo: "美容アイテム紹介リンク経由の売上",
+  },
+  {
+    id: "rev-3",
+    sourceType: "sponsorship",
+    amount: 300000,
+    expense: 50000,
+    recordDate: "2025-06-18",
+    memo: "スキンケアブランドのタイアップ動画",
+  },
+  {
+    id: "rev-4",
+    sourceType: "other",
+    amount: 15000,
+    expense: 0,
+    recordDate: "2025-06-25",
+    memo: "グッズ販売の一部売上",
+  },
+  {
+    id: "rev-5",
+    sourceType: "ad_revenue",
+    amount: 142000,
+    expense: 10000,
+    recordDate: "2025-07-04",
+    memo: "TikTokクリエイターファンド 6月分",
+  },
+  {
+    id: "rev-6",
+    sourceType: "affiliate",
+    amount: 60000,
+    expense: 4500,
+    recordDate: "2025-07-15",
+    memo: "料理家電の紹介リンク経由の売上",
+  },
+  {
+    id: "rev-7",
+    sourceType: "sponsorship",
+    amount: 250000,
+    expense: 30000,
+    recordDate: "2025-07-22",
+    memo: "飲料ブランドのタイアップ動画",
+  },
+];
