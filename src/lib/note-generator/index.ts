@@ -8,10 +8,14 @@ export * from "./types";
 /**
  * NOTE_GENERATOR_PROVIDER 環境変数に応じて NoteGenerator の実装を切り替える。
  * - "mock": モック実装（常にダミーデータ）
- * - "openai" (既定値): OpenAI API を使用。APIキー未設定時はモックにフォールバック
+ * - "openai": OpenAI API を使用
+ * NOTE_GENERATOR_PROVIDER が未設定の場合、OPENAI_API_KEY が設定されていれば
+ * "openai" を、それ以外は "mock" をデフォルトとする。
  */
 export function getNoteGenerator(): NoteGenerator {
-  const provider = (process.env.NOTE_GENERATOR_PROVIDER ?? "openai").toLowerCase();
+  const provider = (
+    process.env.NOTE_GENERATOR_PROVIDER ?? (process.env.OPENAI_API_KEY ? "openai" : "mock")
+  ).toLowerCase();
 
   switch (provider) {
     case "mock":
