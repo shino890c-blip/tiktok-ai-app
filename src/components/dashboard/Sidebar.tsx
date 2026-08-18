@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/lib/auth/AuthProvider";
 import {
   DashboardIcon,
   IdeaIcon,
@@ -19,6 +20,7 @@ import {
   MenuIcon,
   CloseIcon,
   NoteIcon,
+  LogoutIcon,
 } from "@/components/icons";
 
 const DEFAULT_IDEA_ID = "sample-idea";
@@ -41,7 +43,18 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, signOut, isSupabaseConfigured } = useAuth();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsSigningOut(true);
+    await signOut();
+    setIsSigningOut(false);
+    setMobileOpen(false);
+    router.replace("/login");
+  };
 
   return (
     <>
@@ -138,8 +151,23 @@ export function Sidebar() {
           </ul>
         </nav>
 
-        <div className="p-4 text-xs text-white/50 text-center">
-          サンプルデータ表示中
+        <div className="p-4 border-t border-white/10">
+          {isSupabaseConfigured && user ? (
+            <>
+              <div className="px-1 mb-2 text-xs text-white/50 truncate">{user.email}</div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isSigningOut}
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#7C3AED] transition-colors disabled:opacity-60"
+              >
+                <LogoutIcon className="w-5 h-5 text-white/70" />
+                {isSigningOut ? "ログアウト中..." : "ログアウト"}
+              </button>
+            </>
+          ) : (
+            <div className="text-xs text-white/50 text-center">サンプルデータ表示中</div>
+          )}
         </div>
       </motion.aside>
     </>
