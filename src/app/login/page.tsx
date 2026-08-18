@@ -66,7 +66,7 @@ export default function LoginPage() {
 
           {!isSupabaseConfigured && (
             <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-700">
-              Supabaseが設定されていないため、ログイン機能は利用できません。
+              Supabaseの接続設定が正しくないため、ログイン機能は利用できません。管理者にお問い合わせください。
             </div>
           )}
 

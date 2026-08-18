@@ -87,28 +87,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     const client = getSupabaseBrowserClient();
     if (!client) {
-      return { error: "Supabaseが設定されていません。" };
+      return { error: "Supabaseが設定されていません。管理者にお問い合わせください。" };
     }
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    if (error) {
-      return { error: translateAuthError(error.message) };
+    try {
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      if (error) {
+        return { error: translateAuthError(error.message) };
+      }
+      return { error: null };
+    } catch (err) {
+      return { error: translateAuthError(err instanceof Error ? err.message : String(err)) };
     }
-    return { error: null };
   }, []);
 
   const signUp = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     const client = getSupabaseBrowserClient();
     if (!client) {
-      return { error: "Supabaseが設定されていません。" };
+      return { error: "Supabaseが設定されていません。管理者にお問い合わせください。" };
     }
-    const { data, error } = await client.auth.signUp({ email, password });
-    if (error) {
-      return { error: translateAuthError(error.message) };
+    try {
+      const { data, error } = await client.auth.signUp({ email, password });
+      if (error) {
+        return { error: translateAuthError(error.message) };
+      }
+      if (data.user) {
+        await createInitialUserData(data.user.id);
+      }
+      return { error: null };
+    } catch (err) {
+      return { error: translateAuthError(err instanceof Error ? err.message : String(err)) };
     }
-    if (data.user) {
-      await createInitialUserData(data.user.id);
-    }
-    return { error: null };
   }, []);
 
   const signOut = useCallback(async () => {
@@ -153,6 +161,9 @@ function translateAuthError(message: string): string {
   }
   if (message.includes("Unable to validate email address")) {
     return "メールアドレスの形式が正しくありません。";
+  }
+  if (message.includes("Failed to fetch") || message.includes("NetworkError") || message.includes("network")) {
+    return "サーバーに接続できませんでした。インターネット接続を確認するか、時間をおいて再度お試しください。（Supabaseの接続設定に問題がある可能性があります）";
   }
   return message;
 }
