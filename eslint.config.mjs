@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone Node project with its own tsconfig/tests.
+    "ai-note-company/**",
   ]),
 ]);
 

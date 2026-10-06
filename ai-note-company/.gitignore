@@ -1,0 +1,19 @@
+node_modules/
+dist/
+
+# secrets — never commit
+.env
+.env.local
+!.env.example
+
+# Playwright note session (cookies). NEVER commit.
+.auth/*
+!.auth/.gitkeep
+
+# runtime data
+data/*
+!data/.gitkeep
+!data/manual-trends.example.json
+logs/*
+!logs/.gitkeep
+test-results/

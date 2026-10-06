@@ -1,0 +1,38 @@
+{
+  "name": "ai-note-company",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Note Company - research → strategy → writing → QC → note draft → approval → publish → analytics → knowledge loop",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/cli/index.ts dev",
+    "start": "node dist/cli/index.js start",
+    "prestart": "npm run build",
+    "supervisor": "tsx src/cli/index.ts supervisor",
+    "research": "tsx src/cli/index.ts research",
+    "write": "tsx src/cli/index.ts write",
+    "draft": "tsx src/cli/index.ts draft",
+    "publish": "tsx src/cli/index.ts publish",
+    "analytics": "tsx src/cli/index.ts analytics",
+    "status": "tsx src/cli/index.ts status",
+    "approve": "tsx src/cli/index.ts approve",
+    "dashboard": "tsx src/cli/index.ts dashboard",
+    "login": "tsx src/cli/index.ts login",
+    "test": "tsx --test --test-concurrency=1 tests/unit/*.test.ts",
+    "e2e": "tsx --test --test-concurrency=1 tests/e2e/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "playwright": "^1.56.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

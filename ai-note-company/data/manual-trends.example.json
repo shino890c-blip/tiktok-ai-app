@@ -1,0 +1,8 @@
+{
+  "_comment": "data/manual-trends.json にコピーして使う。X(Twitter)のトレンド、読者の悩み、競合記事の観察など、APIで取れない情報を人間が入れる場所。本文のコピーは入れないこと。",
+  "signals": [
+    { "source": "x_manual", "title": "新NISA 2年目 何を見直す", "summary": "Xで『見直し』系の投稿が増えている（目視）" },
+    { "source": "reader_voice", "title": "副業の時間が取れない", "summary": "過去記事のコメントで3件同じ悩み" },
+    { "source": "competitor", "title": "AI活用の時短術まとめ記事が多数", "summary": "手順まで書いた記事は少ない（差別化余地）", "url": "https://note.com/" }
+  ]
+}
