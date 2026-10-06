@@ -22,13 +22,18 @@ export async function runDoctor(config: AppConfig): Promise<{ ready: boolean; ch
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
   const live = !config.mockMode;
+  const delivery = config.publishTarget === "delivery";
 
   const [major, minor] = process.versions.node.split(".").map(Number);
   add(major! > 22 || (major === 22 && minor! >= 13)
     ? { level: "ok", label: "Node.js", detail: process.versions.node }
     : { level: "fail", label: "Node.js", detail: process.versions.node, todo: "Node.js 22.13以上をインストール" });
 
-  add({ level: live ? "info" : "warn", label: "モード", detail: live ? "LIVE（実API）" : "MOCK（練習モード。YouTubeには何も投稿されません）", todo: live ? undefined : "本番にするなら .env で MOCK_MODE=false" });
+  if (delivery) {
+    add({ level: "ok", label: "モード", detail: `納品モード：完成動画を ${config.deliveryDir} に出力（YouTube APIは不要。投稿はあなたが行います）` });
+  } else {
+    add({ level: live ? "info" : "warn", label: "モード", detail: live ? "LIVE（実API）" : "MOCK（練習モード。YouTubeには何も投稿されません）", todo: live ? undefined : "本番にするなら .env で MOCK_MODE=false" });
+  }
 
   // Video rendering
   if (config.video.renderer === "ffmpeg") {
@@ -54,7 +59,12 @@ export async function runDoctor(config: AppConfig): Promise<{ ready: boolean; ch
   // TTS
   const tts = config.video.tts;
   if (tts.provider === "silent") {
-    add({ level: live ? "fail" : "info", label: "ナレーション音声", detail: "silent（無音）", todo: live ? "TTS_PROVIDER=voicevox（無料）または openai" : undefined });
+    add({
+      level: delivery ? "warn" : live ? "fail" : "info",
+      label: "ナレーション音声",
+      detail: "silent（無音の動画になります）",
+      todo: delivery || live ? "声を入れるなら無料アプリVOICEVOXを起動して .env に TTS_PROVIDER=voicevox" : undefined,
+    });
   } else if (tts.provider === "voicevox") {
     try {
       const v = await new VoicevoxTTS(tts.voicevoxUrl, tts.voicevoxSpeaker, tts.voicevoxSpeed, tts.voicevoxCredit).healthCheck();
@@ -68,14 +78,20 @@ export async function runDoctor(config: AppConfig): Promise<{ ready: boolean; ch
 
   // LLM
   if (config.llm.provider === "mock") {
-    add({ level: live ? "fail" : "info", label: "AI（企画・台本）", detail: "mock（サンプル文章）", todo: live ? "LLM_PROVIDER と APIキーを設定" : undefined });
+    add(
+      delivery
+        ? { level: "warn", label: "AI（企画・台本）", detail: "内蔵サンプル（5テーマの繰り返し）", todo: "毎回新しい企画・台本にするなら Anthropic のAPIキーを1つ設定（任意）" }
+        : { level: live ? "fail" : "info", label: "AI（企画・台本）", detail: "mock（サンプル文章）", todo: live ? "LLM_PROVIDER と APIキーを設定" : undefined },
+    );
   } else {
     add({ level: "ok", label: "AI（企画・台本）", detail: `${config.llm.provider} / ${config.llm.model}` });
   }
 
   // YouTube
   const yt = config.youtube;
-  if (yt.provider === "mock") {
+  if (delivery) {
+    add({ level: "info", label: "YouTube", detail: "APIは使いません（トレンド調査なし・投稿は手動）" });
+  } else if (yt.provider === "mock") {
     add({ level: live ? "fail" : "info", label: "YouTube", detail: "mock（投稿はシミュレーション）", todo: live ? "YOUTUBE_PROVIDER=youtube" : undefined });
   } else {
     add({ level: yt.apiKey ? "ok" : "warn", label: "YouTube リサーチ用APIキー", detail: yt.apiKey ? "設定済み" : "未設定（OAuthで代用）" });
@@ -93,7 +109,7 @@ export async function runDoctor(config: AppConfig): Promise<{ ready: boolean; ch
 
   // Automation
   const p = config.pipeline;
-  add({ level: p.autoPublish ? "ok" : "warn", label: "自動投稿 (AUTO_PUBLISH)", detail: p.autoPublish ? "ON（人間の承認なしで投稿）" : "OFF（毎回あなたの承認待ちで止まります）", todo: p.autoPublish ? undefined : "全自動にするなら AUTO_PUBLISH=true" });
+  if (!delivery) add({ level: p.autoPublish ? "ok" : "warn", label: "自動投稿 (AUTO_PUBLISH)", detail: p.autoPublish ? "ON（人間の承認なしで投稿）" : "OFF（毎回あなたの承認待ちで止まります）", todo: p.autoPublish ? undefined : "全自動にするなら AUTO_PUBLISH=true" });
   add({ level: p.autoContinue ? "ok" : "warn", label: "連続制作 (AUTO_CONTINUE)", detail: p.autoContinue ? `ON（${p.autopilotMinIntervalMinutes}分間隔・1日${p.dailyVideoLimit}本まで）` : "OFF（1本作ったら止まります）", todo: p.autoContinue ? undefined : "全自動にするなら AUTO_CONTINUE=true" });
   const notify = config.notifications.channels.filter((c) => c !== "console" && c !== "none");
   add({ level: notify.length ? "ok" : "warn", label: "スマホ通知", detail: notify.length ? notify.join(", ") : "ターミナル表示のみ", todo: notify.length ? undefined : "Discordで通知を受けるなら DISCORD_WEBHOOK_URL と NOTIFY_CHANNELS=console,discord" });

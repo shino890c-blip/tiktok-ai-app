@@ -15,5 +15,5 @@ RUN npm run build && npm prune --omit=dev
 
 ENV NODE_ENV=production
 EXPOSE 3100
-VOLUME ["/app/data", "/app/logs", "/app/secrets"]
+VOLUME ["/app/data", "/app/logs", "/app/secrets", "/app/deliveries"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "dist/cli/index.js", "autopilot"]

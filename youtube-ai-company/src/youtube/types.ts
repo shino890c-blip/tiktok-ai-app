@@ -55,7 +55,7 @@ export interface MetricsResult {
   metrics: VideoMetrics;
   unavailable: (keyof VideoMetrics | "retention")[];
   retention: RetentionPoint[] | null;
-  source: "mock" | "youtube";
+  source: "mock" | "youtube" | "manual";
 }
 
 export interface YouTubeProvider {

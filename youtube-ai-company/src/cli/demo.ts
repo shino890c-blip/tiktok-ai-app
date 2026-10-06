@@ -19,6 +19,7 @@ export async function runDemo(root: string): Promise<boolean> {
       MOCK_MODE: "true",
       AUTO_PUBLISH: "false",
       DATA_DIR: dataDir,
+      DELIVERY_DIR: path.join(dataDir, "deliveries"),
       DATABASE_URL: `sqlite:${path.join(dataDir, "demo.db")}`,
       RETRY_BASE_DELAY_MS: "0",
       NOTIFY_CHANNELS: "console",
@@ -80,23 +81,40 @@ export async function runDemo(root: string): Promise<boolean> {
     const ro = (render?.output ?? {}) as Record<string, unknown>;
     console.log(`  ${render?.status}: ${String(ro.file_path ?? render?.error)}  (${String(ro.duration_sec ?? "-")}秒, narration=${String(ro.has_narration ?? "-")})`);
 
-    step(8, "Approval待ち（READY_FOR_APPROVAL）");
-    const pending = await ctx.approvals.pending();
-    if (!pending.length) throw new Error("No approval request was created");
-    console.log(`  承認待ち: ${pending[0]!.approval_id}`);
-    console.log("  （デモのため demo-operator が承認します。本番では人間が npm run approve / Dashboard で承認）");
-    await ctx.approvals.approve(pending[0]!.approval_id, "demo-operator", { note: "mock E2E demo" });
+    let analytics;
+    if (config.publishTarget === "delivery") {
+      step(8, "納品（動画・サムネイル・アップロード情報をフォルダに出力）");
+      await worker.runUntilIdle({ agents: ["publisher"], types: ["publish"] });
+      p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
+      const video = await ctx.repos.videos.get(p.video_id!);
+      console.log(`  ${video?.status}: ${video?.delivery_path}`);
 
-    step(9, "Mock Publish");
-    await worker.runUntilIdle({ agents: ["publisher"], types: ["publish"] });
-    p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
-    const video = await ctx.repos.videos.get(p.video_id!);
-    console.log(`  ${video?.status}: ${video?.youtube_video_id} (${video?.privacy_status}) ${video?.youtube_url}`);
+      step(9, "（あなたがYouTubeに投稿した想定）");
+      console.log("  本番ではここであなたが「アップロード情報.txt」を見ながらYouTubeアプリで投稿します");
 
-    step(10, "Mock Analytics");
-    await worker.runUntilIdle({ agents: ["analyst"] });
-    p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
-    const analytics = p.analytics_id ? await ctx.repos.analytics.get(p.analytics_id) : undefined;
+      step(10, "再生数の入力 → Analytics（npm run report）");
+      await ctx.tasks.create("analytics", { videoId: p.video_id, manualMetrics: { views: 4200, likes: 180, comments: 12, shares: 9, averageViewPercentage: 71 } });
+      await worker.runUntilIdle({ agents: ["analyst"] });
+      analytics = (await ctx.repos.analytics.list({ where: { video_id: p.video_id! }, limit: 1 }))[0];
+    } else {
+      step(8, "Approval待ち（READY_FOR_APPROVAL）");
+      const pending = await ctx.approvals.pending();
+      if (!pending.length) throw new Error("No approval request was created");
+      console.log(`  承認待ち: ${pending[0]!.approval_id}`);
+      console.log("  （デモのため demo-operator が承認します。本番では人間が npm run approve / Dashboard で承認）");
+      await ctx.approvals.approve(pending[0]!.approval_id, "demo-operator", { note: "mock E2E demo" });
+
+      step(9, "Mock Publish");
+      await worker.runUntilIdle({ agents: ["publisher"], types: ["publish"] });
+      p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
+      const video = await ctx.repos.videos.get(p.video_id!);
+      console.log(`  ${video?.status}: ${video?.youtube_video_id} (${video?.privacy_status}) ${video?.youtube_url}`);
+
+      step(10, "Mock Analytics");
+      await worker.runUntilIdle({ agents: ["analyst"] });
+      p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
+      analytics = p.analytics_id ? await ctx.repos.analytics.get(p.analytics_id) : undefined;
+    }
     const rep = analytics?.report as Record<string, any> | undefined;
     console.log(`  score=${analytics?.performance_score} success=${rep?.success} views=${(analytics?.metrics as any)?.views} 取得不可=${analytics?.unavailable_metrics.join(",")}`);
     for (const c of (rep?.recommended_changes as string[]) ?? []) console.log(`  次回の改善: ${c}`);

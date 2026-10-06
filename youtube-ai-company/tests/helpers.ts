@@ -39,6 +39,8 @@ export async function createTestCompany(
       NOTIFY_CHANNELS: "none",
       LOG_LEVEL: "DEBUG",
       AUTOPILOT_MIN_INTERVAL_MINUTES: "0",
+      PUBLISH_TARGET: "youtube",
+      DELIVERY_DIR: path.join(dataDir, "deliveries"),
       ...opts.env,
     },
     ROOT,

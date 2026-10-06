@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { deliverVideo } from "../../delivery/index.js";
 import { startOfUtcDay } from "../../core/clock.js";
 import { InvalidInputError, NonRetryableError, PublishUnknownStateError, isRetryable } from "../../core/errors.js";
 import { newId } from "../../core/ids.js";
@@ -104,6 +106,7 @@ export class PublisherAgent extends BaseAgent {
       video_file_path: null,
       youtube_video_id: null,
       youtube_url: null,
+      delivery_path: null,
       status: "rendering",
       is_mock: youtube.isMock ? 1 : 0,
       published_at: null,
@@ -133,6 +136,20 @@ export class PublisherAgent extends BaseAgent {
       throw new NonRetryableError("Placeholder renderer cannot be used with real YouTube (set VIDEO_RENDERER=ffmpeg)", "PLACEHOLDER_VIDEO");
     }
     const description = [video.description, ...result.credits.filter((c) => !video.description.includes(c))].join("\n");
+    if (config.publishTarget === "delivery") {
+      // Delivery mode: the human reviews and uploads the delivered file, so no approval gate here.
+      await repos.videos.update(videoId, { video_file_path: result.filePath, description, status: "rendered" });
+      log.info("render.done", `Rendered "${video.title}" (${result.durationSec}s) → delivery`, { video_id: videoId, file: result.filePath });
+      return {
+        video_id: videoId,
+        file_path: result.filePath,
+        duration_sec: result.durationSec,
+        has_narration: result.hasNarration,
+        placeholder: result.placeholder,
+        approval_id: null,
+        status: "RENDERED",
+      };
+    }
     await repos.videos.update(videoId, { video_file_path: result.filePath, description, status: "ready_for_approval" });
     const approval = await approvals.request(videoId, task.pipeline_id, video.title);
     log.info("render.ready_for_approval", `READY_FOR_APPROVAL: "${video.title}" (${result.durationSec}s video rendered)`, {
@@ -159,6 +176,8 @@ export class PublisherAgent extends BaseAgent {
     const video = await repos.videos.get(videoId);
     if (!video) throw new InvalidInputError(`Video ${videoId} not found`);
 
+    if (config.publishTarget === "delivery") return this.deliver(video, { log, checkpoint });
+
     // Idempotency: never upload twice.
     if (video.status === "published" && video.youtube_video_id) {
       log.warn("publish.already_published", "Video already published; skipping upload", { youtube_video_id: video.youtube_video_id });
@@ -174,7 +193,7 @@ export class PublisherAgent extends BaseAgent {
       throw new NonRetryableError(`Video ${videoId} is not approved (status=${video.status}). Publishing aborted.`, "NOT_APPROVED");
     }
 
-    const publishedToday = await repos.videos.count({ status: "published" }, "published_at >= ?", [startOfUtcDay(clock.now()).toISOString()]);
+    const publishedToday = await repos.videos.count({ status: ["published", "delivered"] }, "published_at >= ?", [startOfUtcDay(clock.now()).toISOString()]);
     if (publishedToday >= config.pipeline.dailyVideoLimit) {
       throw new NonRetryableError(`DAILY_VIDEO_LIMIT (${config.pipeline.dailyVideoLimit}) reached; publish later with \`npm run retry\``, "DAILY_LIMIT");
     }
@@ -224,6 +243,46 @@ export class PublisherAgent extends BaseAgent {
     this.ctx.bus.emit("video.published", { videoId, youtubeVideoId: result.youtubeVideoId });
     log.info("publish.done", `${youtube.isMock ? "[MOCK] " : ""}Published ${result.youtubeVideoId} (${privacy})`, { video_id: videoId });
     return this.publishedOutput((await repos.videos.get(videoId))!);
+  }
+
+  /** PUBLISH_TARGET=delivery: hand the finished video to the human as a ready-to-upload folder. */
+  private async deliver(video: VideoRecord, { log, checkpoint }: Pick<ExecutionContext, "log" | "checkpoint">): Promise<Record<string, unknown>> {
+    const { config, repos, clock, experiments, renderer } = this.ctx;
+    if (video.status === "delivered" && video.delivery_path && existsSync(video.delivery_path)) {
+      log.warn("deliver.already_delivered", "Video already delivered; skipping", { delivery_path: video.delivery_path });
+      return { video_id: video.video_id, delivery_path: video.delivery_path, delivered: true };
+    }
+    if (!video.video_file_path || !existsSync(video.video_file_path)) {
+      throw new NonRetryableError(`Rendered video file missing for ${video.video_id}`, "NO_VIDEO_FILE");
+    }
+    const deliveredToday = await repos.videos.count({ status: ["published", "delivered"] }, "published_at >= ?", [startOfUtcDay(clock.now()).toISOString()]);
+    if (deliveredToday >= config.pipeline.dailyVideoLimit) {
+      throw new NonRetryableError(`DAILY_VIDEO_LIMIT (${config.pipeline.dailyVideoLimit}) reached`, "DAILY_LIMIT");
+    }
+    const scriptRow = await repos.scripts.get(video.script_id);
+    const parsed = ScriptOutputSchema.safeParse(scriptRow?.content);
+    if (!parsed.success) throw new InvalidInputError(`Script for ${video.video_id} is missing or malformed`);
+
+    checkpoint();
+    const result = await deliverVideo(video, parsed.data, {
+      deliveryDir: config.deliveryDir,
+      now: clock.now(),
+      ffmpegPath: config.video.ffmpegPath,
+      aiVoice: config.video.tts.provider !== "silent",
+      placeholder: renderer.name === "placeholder" || video.video_file_path.endsWith(PLACEHOLDER_SUFFIX),
+    });
+    await repos.videos.update(video.video_id, { status: "delivered", delivery_path: result.folder, published_at: clock.now().toISOString() });
+    if (video.idea_id) await repos.ideas.update(video.idea_id, { status: "used" });
+    if (video.experiment_id) await experiments.attachVideo(video.experiment_id, video.video_id);
+    log.info("deliver.done", `Delivered "${video.title}" → ${result.folder}`, { video_id: video.video_id });
+    return {
+      video_id: video.video_id,
+      delivery_path: result.folder,
+      video_file: result.videoFile,
+      info_file: result.infoFile,
+      thumbnail_file: result.thumbnailFile,
+      delivered: true,
+    };
   }
 
   private publishedOutput(v: VideoRecord): Record<string, unknown> {

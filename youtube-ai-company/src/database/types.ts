@@ -126,6 +126,8 @@ export interface ScriptRecord extends Timestamps {
 
 export type VideoStatus =
   | "rendering"
+  | "rendered"
+  | "delivered"
   | "ready_for_approval"
   | "approved"
   | "rejected"
@@ -147,6 +149,8 @@ export interface VideoRecord extends Timestamps {
   video_file_path: string | null;
   youtube_video_id: string | null;
   youtube_url: string | null;
+  /** Folder the finished video was delivered to (PUBLISH_TARGET=delivery). */
+  delivery_path: string | null;
   status: VideoStatus;
   is_mock: number;
   published_at: string | null;

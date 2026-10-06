@@ -25,3 +25,4 @@ data/videos/*
 !data/**/.gitkeep
 data/demo/
 secrets/
+deliveries/

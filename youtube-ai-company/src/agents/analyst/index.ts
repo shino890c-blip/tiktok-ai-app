@@ -41,6 +41,34 @@ export function computePerformanceScore(m: VideoMetrics, channelMedianViews: num
   };
 }
 
+const MANUAL_KEYS: (keyof VideoMetrics)[] = [
+  "views",
+  "likes",
+  "comments",
+  "shares",
+  "subscribersGained",
+  "averageViewDurationSec",
+  "averageViewPercentage",
+  "estimatedMinutesWatched",
+];
+
+/** Stats a human typed in from YouTube Studio (`npm run report`). Only provided numbers are used. */
+export function parseManualMetrics(input: unknown): MetricsResult | null {
+  if (!input || typeof input !== "object") return null;
+  const metrics: VideoMetrics = {};
+  for (const k of MANUAL_KEYS) {
+    const v = (input as Record<string, unknown>)[k];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) metrics[k] = v;
+  }
+  if (metrics.views === undefined) throw new InvalidInputError("Manual report needs at least --views");
+  return {
+    metrics,
+    unavailable: [...MANUAL_KEYS.filter((k) => metrics[k] === undefined), "impressions", "ctr", "retention"],
+    retention: null,
+    source: "manual",
+  };
+}
+
 /**
  * 社員4: Analytics & Growth Strategist — データ分析・成長戦略責任者.
  * Pulls real (or simulated) metrics, judges success/failure and experiments,
@@ -56,9 +84,18 @@ export class AnalystAgent extends BaseAgent {
     if (typeof videoId !== "string") throw new InvalidInputError("analytics requires videoId");
     const video = await repos.videos.get(videoId);
     if (!video) throw new InvalidInputError(`Video ${videoId} not found`);
-    if (video.status !== "published" || !video.youtube_video_id) {
-      throw new InvalidInputError(`Video ${videoId} is not published (status=${video.status})`);
+    const manual = parseManualMetrics(task.input.manualMetrics);
+    if (!manual && (video.status !== "published" || !video.youtube_video_id)) {
+      throw new InvalidInputError(
+        video.status === "delivered"
+          ? `Video ${videoId} was delivered for manual upload; enter its stats with \`npm run report -- ${videoId} --views N ...\``
+          : `Video ${videoId} is not published (status=${video.status})`,
+      );
     }
+    if (manual && !["published", "delivered"].includes(video.status)) {
+      throw new InvalidInputError(`Video ${videoId} has not been published or delivered (status=${video.status})`);
+    }
+    const ytId = video.youtube_video_id ?? "manual";
     const script = await repos.scripts.get(video.script_id);
     const idea = video.idea_id ? await repos.ideas.get(video.idea_id) : undefined;
     const experiment = video.experiment_id ? await repos.experiments.get(video.experiment_id) : undefined;
@@ -67,7 +104,7 @@ export class AnalystAgent extends BaseAgent {
 
     checkpoint();
     const today = clock.now().toISOString().slice(0, 10);
-    const result: MetricsResult = await youtube.getVideoMetrics(video.youtube_video_id, {
+    const result: MetricsResult = manual ?? await youtube.getVideoMetrics(ytId, {
       startDate: (video.published_at ?? clock.now().toISOString()).slice(0, 10),
       endDate: today,
       context: { durationSec, hookStyle, confidence: idea?.confidence_score },
@@ -131,7 +168,7 @@ export class AnalystAgent extends BaseAgent {
     const now = clock.now().toISOString();
     const report = {
       video_id: videoId,
-      youtube_video_id: video.youtube_video_id,
+      youtube_video_id: ytId,
       performance_score: score.score,
       score_basis: score.basis,
       insufficient_data: score.insufficientData,
@@ -162,7 +199,7 @@ export class AnalystAgent extends BaseAgent {
     await repos.analytics.insert({
       analytics_id: analyticsId,
       video_id: videoId,
-      youtube_video_id: video.youtube_video_id,
+      youtube_video_id: ytId,
       metrics: { ...result.metrics },
       unavailable_metrics: result.unavailable,
       performance_score: score.score,

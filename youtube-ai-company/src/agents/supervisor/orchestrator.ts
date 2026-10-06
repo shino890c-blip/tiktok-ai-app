@@ -1,4 +1,6 @@
 import { existsSync, statSync } from "node:fs";
+import path from "node:path";
+import { DELIVERY_FILES } from "../../delivery/index.js";
 import { startOfUtcDay } from "../../core/clock.js";
 import { newId } from "../../core/ids.js";
 import type {
@@ -50,7 +52,7 @@ export interface StatusReport {
   running_tasks: TaskRecord[];
   pipelines: PipelineRecord[];
   pending_approvals: (ApprovalRecord & { title?: string })[];
-  videos: { published: number; total_views: number; average_views: number | null; latest: VideoRecord | null };
+  videos: { published: number; delivered: number; total_views: number; average_views: number | null; latest: VideoRecord | null };
   latest_analytics: Record<string, unknown> | null;
   daily: { created_today: number; published_today: number; limit: number };
   knowledge_entries: number;
@@ -167,11 +169,20 @@ export class Supervisor {
         else if (!v.video_file_path || !existsSync(v.video_file_path) || statSync(v.video_file_path).size === 0) {
           problems.push(`rendered video file missing: ${v.video_file_path ?? "(none)"}`);
         }
-        if (!out.approval_id || !(await repos.approvals.get(out.approval_id))) problems.push("approval request missing after render");
+        if (this.ctx.config.publishTarget === "youtube" && (!out.approval_id || !(await repos.approvals.get(out.approval_id)))) {
+          problems.push("approval request missing after render");
+        }
         break;
       }
       case "publish": {
         const v = out.video_id ? await repos.videos.get(out.video_id) : undefined;
+        if (out.delivered === true) {
+          if (!v) problems.push("delivered video record missing");
+          else if (!v.delivery_path || !existsSync(path.join(v.delivery_path, DELIVERY_FILES.video))) {
+            problems.push(`delivered video missing: ${v.delivery_path ?? "(none)"}`);
+          }
+          break;
+        }
         if (!v) problems.push("published video record missing");
         else if (!v.youtube_video_id || !out.youtube_video_id) problems.push("published but YouTube video ID is missing");
         else if (v.status !== "published") problems.push(`video status is ${v.status}, expected published`);
@@ -343,6 +354,12 @@ export class Supervisor {
       }
 
       case "render":
+        if (config.publishTarget === "delivery") {
+          if (await this.move(pid, "RENDER", { stage: "PUBLISH", video_id: out.video_id })) {
+            await tasks.create("publish", { pipelineId: pid, videoId: out.video_id }, { pipelineId: pid });
+          }
+          break;
+        }
         if (await this.move(pid, "RENDER", { stage: "WAITING_APPROVAL", status: "WAITING_APPROVAL", video_id: out.video_id })) {
           await tasks.create("publish", { pipelineId: pid, videoId: out.video_id, approvalId: out.approval_id }, { pipelineId: pid, status: "WAITING_APPROVAL" });
           if (config.pipeline.autoPublish) {
@@ -353,6 +370,19 @@ export class Supervisor {
         break;
 
       case "publish": {
+        if (out.delivered) {
+          if (await this.move(pid, "PUBLISH", { stage: "COMPLETED", status: "COMPLETED" })) {
+            await notifier.notify({
+              level: "INFO",
+              title: `📦 動画を納品しました: ${String(out.delivery_path)}`,
+              agent: "publisher",
+              taskId: task.task_id,
+              action: "フォルダの「アップロード情報.txt」を見てYouTubeに投稿してください",
+            });
+            await this.maybeContinue();
+          }
+          break;
+        }
         const runAt = new Date(clock.now().getTime() + config.youtube.analyticsDelayHours * 3_600_000);
         if (await this.move(pid, "PUBLISH", { stage: "ANALYTICS", status: "ACTIVE" })) {
           await tasks.create("analytics", { pipelineId: pid, videoId: out.video_id }, { pipelineId: pid, runAt });
@@ -585,6 +615,10 @@ export class Supervisor {
     const out: string[] = [];
     const pending = await repos.approvals.count({ status: "pending" });
     if (pending) out.push(`人間の承認待ち ${pending}件 → npm run approvals / Dashboard`);
+    if (config.publishTarget === "delivery") {
+      const delivered = await repos.videos.count({ status: "delivered" });
+      if (delivered) out.push(`納品済み動画 ${delivered}本 → npm run deliveries（投稿後に npm run report で再生数を入力するとAIが学習）`);
+    }
     const failed = await repos.tasks.count({ status: "FAILED" });
     if (failed) out.push(`FAILEDタスク ${failed}件 → 原因確認後 npm run retry -- <task_id>`);
     for (const p of await repos.pipelines.list({ where: { status: "ACTIVE" } })) {
@@ -636,6 +670,7 @@ export class Supervisor {
       pending_approvals: pendingApprovals.map((a) => ({ ...a, title: titles.get(a.video_id) })),
       videos: {
         published: published.length,
+        delivered: await repos.videos.count({ status: "delivered" }),
         total_views: totalViews,
         average_views: viewsByVideo.size ? Math.round(totalViews / viewsByVideo.size) : null,
         latest: published[0] ?? null,

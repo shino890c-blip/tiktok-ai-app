@@ -23,6 +23,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./secrets:/app/secrets
+      - ./deliveries:/app/deliveries
     ports:
       - "127.0.0.1:3100:3100"     # dashboard (this machine only)
       - "127.0.0.1:53682:53682"   # OAuth callback for youtube:auth

@@ -28,7 +28,10 @@ export class ResearcherAgent extends BaseAgent {
     // 1. Market signals
     const publishedAfter = new Date(clock.now().getTime() - 7 * 24 * 3_600_000);
     const collected = new Map<string, TrendingVideo>();
-    for (const kw of config.channel.searchKeywords.slice(0, 3)) {
+    // Simulated trend data must never be fed to a real LLM as if it were the real market.
+    const useTrendData = !youtube.isMock || config.mockMode;
+    if (!useTrendData) log.info("research.no_trend_data", "No YouTube API configured: planning from general knowledge + own history only");
+    for (const kw of useTrendData ? config.channel.searchKeywords.slice(0, 3) : []) {
       checkpoint();
       const found = await youtube.searchTrendingShorts(kw, { regionCode: config.channel.regionCode, maxResults: 10, publishedAfter });
       for (const v of found) collected.set(v.videoId, v);
@@ -74,6 +77,7 @@ export class ResearcherAgent extends BaseAgent {
       language: config.channel.language,
       goal,
       seed: pipelineId,
+      trendDataAvailable: useTrendData,
       trending: trending.map((v) => ({ ...v, topComments: comments[v.videoId] ?? [] })),
       stats,
       ownHistory,

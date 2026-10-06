@@ -221,6 +221,11 @@ CREATE TABLE IF NOT EXISTS api_usage (
 );
 `,
   },
+  {
+    version: 2,
+    name: "video_delivery",
+    sql: `ALTER TABLE videos ADD COLUMN delivery_path TEXT;`,
+  },
 ];
 
 export async function migrate(db: SqlDatabase, nowIso: string): Promise<number[]> {

@@ -23,6 +23,8 @@
     "publish": "npm run cli -- publish",
     "analyze": "npm run cli -- analyze",
     "feedback": "npm run cli -- feedback",
+    "deliveries": "npm run cli -- deliveries",
+    "report": "npm run cli -- report",
     "approvals": "npm run cli -- approvals",
     "approve": "npm run cli -- approve",
     "reject": "npm run cli -- reject",

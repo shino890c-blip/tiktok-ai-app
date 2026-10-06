@@ -139,7 +139,7 @@
     const t = r.tasks;
     const kpis = [
       ["成功(完了)Task", t.COMPLETED], ["失敗Task", t.FAILED], ["リトライ数", r.retries_total], ["実行中", t.RUNNING],
-      ["承認待ち", r.pending_approvals.length], ["投稿数", r.videos.published], ["総再生数", r.videos.total_views], ["平均再生数", r.videos.average_views],
+      ["承認待ち", r.pending_approvals.length], ["納品数", r.videos.delivered], ["投稿数", r.videos.published], ["総再生数", r.videos.total_views], ["平均再生数", r.videos.average_views],
       ["本日の制作", `${r.daily.created_today}/${r.daily.limit}`], ["Knowledge", r.knowledge_entries],
     ];
     $("kpis").innerHTML = kpis.map(([k, v]) => `<div class="kpi"><b>${typeof v === "number" ? num(v) : esc(v ?? "-")}</b><span>${esc(k)}</span></div>`).join("");

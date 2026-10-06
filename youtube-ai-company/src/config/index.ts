@@ -7,6 +7,7 @@ export type YouTubeProviderName = "mock" | "youtube";
 export type PrivacyStatus = "private" | "unlisted" | "public";
 export type TTSProviderName = "silent" | "voicevox" | "openai";
 export type RendererName = "ffmpeg" | "placeholder";
+export type PublishTarget = "delivery" | "youtube";
 export type LogLevelName = "DEBUG" | "INFO" | "WARN" | "ERROR" | "CRITICAL";
 
 export interface AppConfig {
@@ -15,6 +16,9 @@ export interface AppConfig {
   dataDir: string;
   logDir: string;
   promptsDir: string;
+  /** delivery = finished videos are written to DELIVERY_DIR for manual upload (no YouTube API needed). */
+  publishTarget: PublishTarget;
+  deliveryDir: string;
   databaseUrl: string;
   logLevel: LogLevelName;
   logToFile: boolean;
@@ -187,6 +191,8 @@ export function loadConfig(env: Env = process.env, rootDir: string = process.cwd
     dataDir,
     logDir: path.resolve(rootDir, str(env, "LOG_DIR", "./logs")),
     promptsDir: path.resolve(rootDir, str(env, "PROMPTS_DIR", "./prompts")),
+    publishTarget: oneOf<PublishTarget>(env, "PUBLISH_TARGET", ["delivery", "youtube"], "delivery"),
+    deliveryDir: path.resolve(rootDir, str(env, "DELIVERY_DIR", "./deliveries")),
     databaseUrl: resolveSqliteUrl(str(env, "DATABASE_URL", `sqlite:${path.join(dataDir, "company.db")}`), rootDir),
     logLevel: oneOf<LogLevelName>(env, "LOG_LEVEL", ["DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"], "INFO"),
     logToFile: bool(env, "LOG_TO_FILE", true),

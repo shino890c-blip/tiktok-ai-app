@@ -33,6 +33,11 @@ Pipeline
                         Run pending tasks of that stage  (analyze --video <id> --now)
   run                   Run every runnable task until idle
 
+Delivery (PUBLISH_TARGET=delivery, default)
+  deliveries            List delivered videos (folder, upload status)
+  report <video_id> --views N [--likes N --comments N --shares N --subs N --avg-percent P --avg-duration S --url URL]
+                        Enter stats from YouTube Studio → Analyst learns from them
+
 Human-in-the-loop
   approvals             List pending approvals
   approve <id> [--by name] [--note text] [--video-file path] [--run]
@@ -62,6 +67,14 @@ const { values: flags, positionals } = parseArgs({
     "video-file": { type: "string" },
     video: { type: "string" },
     goal: { type: "string" },
+    views: { type: "string" },
+    likes: { type: "string" },
+    comments: { type: "string" },
+    shares: { type: "string" },
+    subs: { type: "string" },
+    "avg-percent": { type: "string" },
+    "avg-duration": { type: "string" },
+    url: { type: "string" },
     "no-dashboard": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
@@ -132,7 +145,10 @@ async function main(): Promise<void> {
       c.start();
       const server = flags["no-dashboard"] ? null : await startDashboard(c, config.dashboard);
       console.log(
-        `\n🚀 オートパイロット開始: 調査→台本→品質チェック→動画生成→投稿(${config.mockMode ? "MOCK" : config.youtube.allowPublic ? config.youtube.defaultPrivacy : "private"})→分析→学習 を自動で繰り返します` +
+        (config.publishTarget === "delivery"
+          ? `\n🚀 オートパイロット開始: 調査→台本→品質チェック→動画生成→納品（${config.deliveryDir}）を自動で繰り返します` +
+            `\n   投稿はあなたが「アップロード情報.txt」を見て行い、再生数を npm run report で入力するとAIが学習します`
+          : `\n🚀 オートパイロット開始: 調査→台本→品質チェック→動画生成→投稿(${config.mockMode ? "MOCK" : config.youtube.allowPublic ? config.youtube.defaultPrivacy : "private"})→分析→学習 を自動で繰り返します`) +
           `\n   1日${config.pipeline.dailyVideoLimit}本まで / ${config.pipeline.autopilotMinIntervalMinutes}分間隔 / 連続${config.pipeline.autopilotMaxConsecutiveFailures}回失敗で自動停止` +
           `\n   Dashboard: http://${config.dashboard.host}:${config.dashboard.port}   停止: Ctrl+C\n`,
       );
@@ -210,6 +226,46 @@ async function main(): Promise<void> {
           console.log(`Analytics scheduled now for ${pending.length} task(s)`);
         }
         await runStage(c, ["analytics", "feedback"]);
+      });
+    case "deliveries":
+      return withCompany(config, async (c) => {
+        const vids = await c.ctx.repos.videos.list({ where: { status: "delivered" }, limit: 50 });
+        if (!vids.length) return console.log("まだ納品された動画はありません（npm run autopilot で作り始めます）");
+        for (const v of vids) {
+          const reported = (await c.ctx.repos.analytics.count({ video_id: v.video_id })) > 0;
+          console.log(`\n■ ${v.title}\n  フォルダ: ${v.delivery_path}\n  納品日時: ${v.published_at}  動画ID: ${v.video_id}  ${reported ? "✔ 再生数入力済み" : "（投稿後に npm run report -- " + v.video_id + " --views 再生数）"}`);
+        }
+      });
+    case "report":
+      return withCompany(config, async (c) => {
+        const id = positionals[1];
+        const n = (k: string) => (str(flags[k]) !== undefined ? Number(str(flags[k])) : undefined);
+        if (!id || n("views") === undefined || !Number.isFinite(n("views"))) {
+          throw new Error("Usage: report <video_id> --views 1234 [--likes 50 --comments 3 --shares 2 --subs 1 --avg-percent 65 --avg-duration 18]");
+        }
+        const video = await c.ctx.repos.videos.get(id);
+        if (!video) throw new Error(`動画が見つかりません: ${id}（npm run deliveries で確認）`);
+        const url = str(flags.url);
+        if (url) await c.ctx.repos.videos.update(id, { youtube_url: url });
+        await c.ctx.tasks.create("analytics", {
+          videoId: id,
+          manualMetrics: {
+            views: n("views"),
+            likes: n("likes"),
+            comments: n("comments"),
+            shares: n("shares"),
+            subscribersGained: n("subs"),
+            averageViewPercentage: n("avg-percent"),
+            averageViewDurationSec: n("avg-duration"),
+          },
+        });
+        await runStage(c, ["analytics", "feedback"]);
+        const a = (await c.ctx.repos.analytics.list({ where: { video_id: id }, limit: 1 }))[0];
+        if (a) {
+          const r = a.report as Record<string, any>;
+          console.log(`\n📊 スコア ${a.performance_score}（${r.success ? "成功" : "改善の余地あり"}）: ${r.verdict_reason}`);
+          for (const x of (r.recommended_changes as string[]) ?? []) console.log(`  次回の改善: ${x}`);
+        }
       });
     case "approvals":
       return withCompany(config, async (c) => {

@@ -11,7 +11,47 @@
 
 ---
 
-## 🚀 全自動運用（オートパイロット）— まずここだけ読めばOK
+## 📦 いちばん簡単な使い方：完成動画を納品してもらう（APIキー不要）
+
+デフォルトは **納品モード**（`PUBLISH_TARGET=delivery`）です。AIが動画を完成させて `deliveries/` フォルダに置くので、あなたはそれをYouTubeアプリで投稿するだけです。**YouTube API・Google Cloud の設定は不要です。**
+
+```bash
+cd youtube-ai-company
+npm install
+npm run autopilot      # 1日3本まで、自動で作り続けて納品（Ctrl+Cで停止）
+npm run deliveries     # 納品された動画の一覧
+```
+
+納品フォルダの中身（1本ごと）:
+
+```
+deliveries/2026-10-06_1354_玉ねぎで涙が出にくくなる切り方/
+├── video.mp4               ← そのまま投稿する縦型動画
+├── サムネイル.jpg
+├── アップロード情報.txt     ← タイトル・説明文・タグ（コピペ用）と投稿手順
+└── 台本.json
+```
+
+投稿して数日たったら、YouTube Studio の数字を入れるとAIが分析して次の動画に活かします（任意）:
+
+```bash
+npm run report -- <動画ID> --views 1200 --likes 40 --comments 3 --avg-percent 65
+```
+
+### もっと良くするには（どちらも任意）
+
+| やること | 効果 | 難しさ |
+|---|---|---|
+| 無料アプリ [VOICEVOX](https://voicevox.hiroshiba.jp/) をインストールして起動したままにし、`.env` に `TTS_PROVIDER=voicevox` | 動画にナレーション（声）が入る。**キーも登録も不要** | かんたん |
+| [Anthropic](https://console.anthropic.com/) のAPIキーを1つ取り、`.env` に `MOCK_MODE=false` / `LLM_PROVIDER=anthropic` / `LLM_MODEL=claude-sonnet-5-5` / `ANTHROPIC_API_KEY=...` | 毎回新しい企画・台本を考える（キーなしだと内蔵サンプル5テーマの繰り返し） | 5分 |
+
+`npm run doctor` を実行すると、今の設定で何ができて、何を足せばよくなるかが表示されます。
+
+---
+
+## 🚀 YouTubeへの自動投稿まで全自動にする（上級者向け）
+
+`.env` で `PUBLISH_TARGET=youtube` にすると、納品ではなくYouTube APIで直接投稿します。
 
 ```bash
 npm run doctor      # 何が設定済みで、あと何をすればいいかを表示
@@ -32,7 +72,7 @@ npm run autopilot   # 全自動で回し続ける（Ctrl+Cで停止）
 | 1 | AIのAPIキーを取得（[Anthropic](https://console.anthropic.com/) または OpenAI）→ `.env` に `ANTHROPIC_API_KEY=...` | 5分 |
 | 2 | Google Cloud で YouTube API を有効化し、APIキーと OAuthクライアントを作成 →`.env` に設定（[手順](#youtube-api-設定方法)） | 15分 |
 | 3 | `npm run youtube:auth`（Dockerなら下記コマンド）を **1回だけ** 実行し、ブラウザで投稿用チャンネルを許可 | 2分 |
-| 4 | `.env` で `MOCK_MODE=false` / `LLM_PROVIDER=anthropic` / `LLM_MODEL=...` / `YOUTUBE_PROVIDER=youtube` / `YOUTUBE_UPLOAD_ENABLED=true` | 1分 |
+| 4 | `.env` で `PUBLISH_TARGET=youtube` / `MOCK_MODE=false` / `LLM_PROVIDER=anthropic` / `LLM_MODEL=...` / `YOUTUBE_PROVIDER=youtube` / `YOUTUBE_UPLOAD_ENABLED=true` | 1分 |
 | 5 | （任意）スマホ通知: Discordのウェブフックを作り `DISCORD_WEBHOOK_URL=...` と `NOTIFY_CHANNELS=console,discord` | 3分 |
 | 6 | `npm run doctor` で全部 ✔ になったら、常時起動のPC/サーバーで `docker compose up -d --build` | 5分 |
 
@@ -341,7 +381,7 @@ npm run typecheck
 npm run build
 ```
 
-カバー範囲: 動画生成（ffmpegで実際に1080×1920動画を生成・検証、VOICEVOX連携、尺超過の拒否、字幕の折り返し）、オートパイロット（分析待ちでも次を制作・間隔・日次上限・連続失敗で停止）、Researcher正常終了／コピー除外、Script Writer正常終了／不正入力は非リトライ、QCルール、QC合格→承認待ち、QC不合格→差し戻し→上限でFAILED、承認・却下・未承認投稿の拒否・AUTO_PUBLISH、Mock Publish／二重投稿防止／状態不明時の中止、Analytics（取得不可指標を推測しない）、Knowledge Base保存、Supervisorのタスク追跡・停滞復旧、Watchdog（heartbeat喪失→再起動・再実行、タイムアウト→上限でFAILED、遅延完了の無視）、Retry、最大Retry超過でFAILED＋CRITICAL通知、成果物欠落検知（research JSON削除・publishのID欠落・KB未反映）、E2E、AUTO_CONTINUE＋日次上限、設定の安全デフォルト、構造化ログ、Dashboard API（トークン認可）。
+カバー範囲: 納品モード（承認なしでフォルダ出力・YouTube呼び出しなし・手入力の再生数から学習・偽トレンドデータを使わない）、動画生成（ffmpegで実際に1080×1920動画を生成・検証、VOICEVOX連携、尺超過の拒否、字幕の折り返し）、オートパイロット（分析待ちでも次を制作・間隔・日次上限・連続失敗で停止）、Researcher正常終了／コピー除外、Script Writer正常終了／不正入力は非リトライ、QCルール、QC合格→承認待ち、QC不合格→差し戻し→上限でFAILED、承認・却下・未承認投稿の拒否・AUTO_PUBLISH、Mock Publish／二重投稿防止／状態不明時の中止、Analytics（取得不可指標を推測しない）、Knowledge Base保存、Supervisorのタスク追跡・停滞復旧、Watchdog（heartbeat喪失→再起動・再実行、タイムアウト→上限でFAILED、遅延完了の無視）、Retry、最大Retry超過でFAILED＋CRITICAL通知、成果物欠落検知（research JSON削除・publishのID欠落・KB未反映）、E2E、AUTO_CONTINUE＋日次上限、設定の安全デフォルト、構造化ログ、Dashboard API（トークン認可）。
 
 ---
 
