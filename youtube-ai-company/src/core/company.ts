@@ -16,6 +16,7 @@ import { createLLMProvider, PromptLoader, type LLMProvider } from "../llm/index.
 import { DatabaseEventSink } from "../logging/db-sink.js";
 import { ConsoleSink, createLogger, FileSink, type Logger, type LogSink } from "../logging/logger.js";
 import { createNotificationService, type NotificationChannel, type NotificationService } from "../notifications/index.js";
+import { createRenderer, type VideoRenderer } from "../video/renderer.js";
 import { createYouTubeProvider, type YouTubeProvider } from "../youtube/index.js";
 import { ApprovalService } from "./approvals.js";
 import { ArtifactStore } from "./artifacts.js";
@@ -32,6 +33,7 @@ export interface CompanyOverrides {
   db?: SqlDatabase;
   llm?: LLMProvider;
   youtube?: YouTubeProvider;
+  renderer?: VideoRenderer;
   notifier?: NotificationService;
   extraNotificationChannels?: NotificationChannel[];
   logSinks?: LogSink[];
@@ -77,6 +79,7 @@ export async function createCompany(config: AppConfig, overrides: CompanyOverrid
     approvals: new ApprovalService(repos, tasks, bus, notifier, clock, logger),
     llm: overrides.llm ?? createLLMProvider(config),
     youtube: overrides.youtube ?? createYouTubeProvider(config, { repos, clock, logger }),
+    renderer: overrides.renderer ?? createRenderer(config),
     notifier,
     knowledge: new KnowledgeBase(repos, artifacts),
     experiments: new ExperimentManager(repos, clock, config.pipeline.experimentMinSamples),

@@ -10,6 +10,7 @@ import type { TaskType } from "../database/types.js";
 import { startDashboard } from "../dashboard/server.js";
 import { GoogleOAuthClient } from "../youtube/index.js";
 import { runDemo } from "./demo.js";
+import { runDoctor } from "./doctor.js";
 import { printStatus } from "./format.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -19,6 +20,7 @@ const HELP = `AI YouTube Company CLI
 Usage: npm run <command> -- [options]
 
 Long-running
+  autopilot             FULL AUTOMATION: start + AUTO_PUBLISH + AUTO_CONTINUE (checks setup first)
   start                 Worker + Supervisor + Watchdog + Dashboard (all-in-one)
   worker                Agent worker only (processes tasks, sends heartbeats)
   supervisor            Supervisor + Watchdog only
@@ -41,6 +43,7 @@ Human-in-the-loop
 Info
   status [--json]       Agents, tasks, pipelines, approvals, KPIs, next actions
   knowledge | experiments | config
+  doctor                Check setup and list what you still need to do
   db:init               Create/migrate the SQLite database
   demo                  Full mock E2E run in an isolated demo database
   youtube:auth          OAuth consent flow; stores token.json (gitignored)
@@ -105,9 +108,37 @@ async function main(): Promise<void> {
     return;
   }
   loadDotEnv(ROOT);
+  if (cmd === "autopilot") {
+    // Running `autopilot` is the explicit opt-in to unattended production.
+    process.env.AUTO_PUBLISH = "true";
+    process.env.AUTO_CONTINUE = "true";
+  }
   const config = loadConfig(process.env, ROOT);
 
   switch (cmd) {
+    case "doctor": {
+      const { ready } = await runDoctor(config);
+      if (!ready) process.exitCode = 1;
+      return;
+    }
+    case "autopilot": {
+      const { ready } = await runDoctor(config);
+      if (!ready && !config.mockMode) {
+        console.log("✖ 準備ができていないためオートパイロットを開始しません。上の「あなたがやること」を済ませてください。");
+        process.exitCode = 1;
+        return;
+      }
+      const c = await createCompany(config);
+      c.start();
+      const server = flags["no-dashboard"] ? null : await startDashboard(c, config.dashboard);
+      console.log(
+        `\n🚀 オートパイロット開始: 調査→台本→品質チェック→動画生成→投稿(${config.mockMode ? "MOCK" : config.youtube.allowPublic ? config.youtube.defaultPrivacy : "private"})→分析→学習 を自動で繰り返します` +
+          `\n   1日${config.pipeline.dailyVideoLimit}本まで / ${config.pipeline.autopilotMinIntervalMinutes}分間隔 / 連続${config.pipeline.autopilotMaxConsecutiveFailures}回失敗で自動停止` +
+          `\n   Dashboard: http://${config.dashboard.host}:${config.dashboard.port}   停止: Ctrl+C\n`,
+      );
+      keepAlive(c, async () => void server?.close());
+      return;
+    }
     case "start": {
       const c = await createCompany(config);
       c.start();
@@ -301,7 +332,8 @@ async function youtubeAuth(config: AppConfig): Promise<void> {
         reject(err);
       }
     });
-    server.listen(Number(redirect.port || 80), redirect.hostname);
+    // Inside Docker the callback must listen on 0.0.0.0 (OAUTH_LISTEN_HOST) to be reachable through the port mapping.
+    server.listen(Number(redirect.port || 80), process.env.OAUTH_LISTEN_HOST || redirect.hostname);
   });
 }
 

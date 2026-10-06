@@ -1,0 +1,31 @@
+# Full automation in two containers:
+#   app      — the AI company (autopilot + dashboard)
+#   voicevox — free Japanese text-to-speech engine for narration
+#
+#   docker compose up -d --build      start (restarts automatically after reboot)
+#   docker compose logs -f app        watch what the AI company is doing
+#   docker compose run --rm --service-ports app node dist/cli/index.js youtube:auth   one-time YouTube login
+#   docker compose down               stop
+services:
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-latest
+    restart: unless-stopped
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      VOICEVOX_URL: http://voicevox:50021
+      DASHBOARD_HOST: 0.0.0.0
+      YOUTUBE_TOKEN_PATH: /app/secrets/token.json
+      OAUTH_LISTEN_HOST: 0.0.0.0
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./secrets:/app/secrets
+    ports:
+      - "127.0.0.1:3100:3100"     # dashboard (this machine only)
+      - "127.0.0.1:53682:53682"   # OAuth callback for youtube:auth
+    depends_on:
+      - voicevox
+    restart: unless-stopped

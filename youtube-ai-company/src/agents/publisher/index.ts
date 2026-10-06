@@ -1,8 +1,10 @@
+import path from "node:path";
 import { startOfUtcDay } from "../../core/clock.js";
 import { InvalidInputError, NonRetryableError, PublishUnknownStateError, isRetryable } from "../../core/errors.js";
 import { newId } from "../../core/ids.js";
 import type { TaskRecord, VideoRecord } from "../../database/types.js";
 import { completeJson } from "../../llm/index.js";
+import { PLACEHOLDER_SUFFIX } from "../../video/renderer.js";
 import { BaseAgent, type ExecutionContext } from "../base-agent.js";
 import { QCReviewSchema, ScriptOutputSchema, type QCIssue } from "../schemas.js";
 import { humanChecklist, isValidTitle, runQualityRules } from "./quality-rules.js";
@@ -13,21 +15,23 @@ const MIN_REVIEW_SCORE = 60;
 
 /**
  * 社員3: Publisher / Quality Controller — 品質管理責任者.
- * A) quality_check: rule checks + LLM review -> READY_FOR_APPROVAL or send back to Script Writer.
+ * A) quality_check: rule checks + LLM review -> render, or send back to Script Writer.
+ * render: produces the actual video file (TTS + captions) -> READY_FOR_APPROVAL.
  * B) publish: uploads only approved videos; aborts on any unknown state.
  */
 export class PublisherAgent extends BaseAgent {
   readonly name = "publisher" as const;
-  readonly handles = ["quality_check" as const, "publish" as const];
+  readonly handles = ["quality_check" as const, "render" as const, "publish" as const];
 
   protected async execute(task: TaskRecord, exec: ExecutionContext): Promise<Record<string, unknown>> {
     if (task.type === "quality_check") return this.qualityCheck(task, exec);
+    if (task.type === "render") return this.renderVideo(task, exec);
     if (task.type === "publish") return this.publish(task, exec);
     throw new InvalidInputError(`Publisher cannot handle task type ${task.type}`);
   }
 
   private async qualityCheck(task: TaskRecord, { log, checkpoint }: ExecutionContext): Promise<Record<string, unknown>> {
-    const { config, repos, llm, prompts, approvals, youtube } = this.ctx;
+    const { config, repos, llm, prompts, youtube } = this.ctx;
     const scriptId = task.input.scriptId;
     if (typeof scriptId !== "string") throw new InvalidInputError("quality_check requires scriptId");
     const scriptRow = await repos.scripts.get(scriptId);
@@ -71,7 +75,7 @@ export class PublisherAgent extends BaseAgent {
       summary: review.summary,
       issues,
       counts: { blocker: blockers.length, major: majors.length, minor: issues.length - blockers.length - majors.length },
-      human_checklist: humanChecklist(script, false),
+      human_checklist: humanChecklist(script),
     };
     await repos.scripts.update(scriptId, { status: passed ? "qc_passed" : "qc_failed", qc_report: report });
 
@@ -100,17 +104,52 @@ export class PublisherAgent extends BaseAgent {
       video_file_path: null,
       youtube_video_id: null,
       youtube_url: null,
-      status: "ready_for_approval",
+      status: "rendering",
       is_mock: youtube.isMock ? 1 : 0,
       published_at: null,
     });
-    const approval = await approvals.request(videoId, task.pipeline_id, title);
-    log.info("qc.ready_for_approval", `READY_FOR_APPROVAL: "${title}" (score ${review.overall_score})`, {
+    log.info("qc.passed", `QC passed: "${title}" (score ${review.overall_score}) → rendering`, {
       video_id: videoId,
-      approval_id: approval.approval_id,
       minor_issues: report.counts.minor,
     });
-    return { passed: true, script_id: scriptId, video_id: videoId, approval_id: approval.approval_id, status: "READY_FOR_APPROVAL", qc_report: report };
+    return { passed: true, script_id: scriptId, video_id: videoId, status: "RENDERING", qc_report: report };
+  }
+
+  /** Renders the video file, verifies it, and only then asks for approval (humans review the real video). */
+  private async renderVideo(task: TaskRecord, { log, checkpoint }: ExecutionContext): Promise<Record<string, unknown>> {
+    const { config, repos, renderer, approvals, youtube } = this.ctx;
+    const videoId = task.input.videoId;
+    if (typeof videoId !== "string") throw new InvalidInputError("render requires videoId");
+    const video = await repos.videos.get(videoId);
+    if (!video) throw new InvalidInputError(`Video ${videoId} not found`);
+    const scriptRow = await repos.scripts.get(video.script_id);
+    const parsed = ScriptOutputSchema.safeParse(scriptRow?.content);
+    if (!parsed.success) throw new InvalidInputError(`Script for ${videoId} is missing or malformed`);
+
+    checkpoint();
+    const outPath = path.join(config.dataDir, "videos", `${videoId}.mp4`);
+    const result = await renderer.render(parsed.data, outPath, { maxDurationSec: config.pipeline.shortsMaxDurationSec });
+    if (result.placeholder && !youtube.isMock) {
+      throw new NonRetryableError("Placeholder renderer cannot be used with real YouTube (set VIDEO_RENDERER=ffmpeg)", "PLACEHOLDER_VIDEO");
+    }
+    const description = [video.description, ...result.credits.filter((c) => !video.description.includes(c))].join("\n");
+    await repos.videos.update(videoId, { video_file_path: result.filePath, description, status: "ready_for_approval" });
+    const approval = await approvals.request(videoId, task.pipeline_id, video.title);
+    log.info("render.ready_for_approval", `READY_FOR_APPROVAL: "${video.title}" (${result.durationSec}s video rendered)`, {
+      video_id: videoId,
+      file: result.filePath,
+      speedup: result.speedup,
+      approval_id: approval.approval_id,
+    });
+    return {
+      video_id: videoId,
+      file_path: result.filePath,
+      duration_sec: result.durationSec,
+      has_narration: result.hasNarration,
+      placeholder: result.placeholder,
+      approval_id: approval.approval_id,
+      status: "READY_FOR_APPROVAL",
+    };
   }
 
   private async publish(task: TaskRecord, { log, checkpoint }: ExecutionContext): Promise<Record<string, unknown>> {
@@ -143,6 +182,9 @@ export class PublisherAgent extends BaseAgent {
       throw new NonRetryableError("Real upload disabled (YOUTUBE_UPLOAD_ENABLED=false). Nothing was sent to YouTube.", "UPLOAD_DISABLED");
     }
 
+    if (!youtube.isMock && video.video_file_path?.endsWith(PLACEHOLDER_SUFFIX)) {
+      throw new NonRetryableError("Refusing to upload a placeholder video to YouTube", "PLACEHOLDER_VIDEO");
+    }
     const privacy = video.privacy_status === "public" && !config.youtube.allowPublic ? "private" : video.privacy_status;
     checkpoint();
     await repos.videos.update(videoId, { status: "publishing" });

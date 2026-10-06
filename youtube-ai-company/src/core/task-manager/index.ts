@@ -12,6 +12,7 @@ export const TASK_AGENT: Record<TaskType, AgentName> = {
   research: "researcher",
   script: "scriptwriter",
   quality_check: "publisher",
+  render: "publisher",
   publish: "publisher",
   analytics: "analyst",
   feedback: "supervisor",

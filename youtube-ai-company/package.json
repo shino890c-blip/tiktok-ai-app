@@ -10,6 +10,8 @@
   "scripts": {
     "cli": "node --disable-warning=ExperimentalWarning --import tsx src/cli/index.ts",
     "start": "npm run cli -- start",
+    "autopilot": "npm run cli -- autopilot",
+    "doctor": "npm run cli -- doctor",
     "dev": "node --disable-warning=ExperimentalWarning --import tsx --watch src/cli/index.ts start",
     "worker": "npm run cli -- worker",
     "supervisor": "npm run cli -- supervisor",
@@ -31,6 +33,7 @@
     "youtube:auth": "npm run cli -- youtube:auth",
     "build": "tsc -p tsconfig.build.json",
     "start:prod": "node --disable-warning=ExperimentalWarning dist/cli/index.js start",
+    "autopilot:prod": "node --disable-warning=ExperimentalWarning dist/cli/index.js autopilot",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

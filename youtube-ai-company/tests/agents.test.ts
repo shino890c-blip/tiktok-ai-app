@@ -127,13 +127,17 @@ describe("3. Publisher quality check", () => {
     expect(blockers).toEqual(expect.arrayContaining(["safety", "duration", "cta", "scenes[0]"]));
   });
 
-  it("marks a passing script READY_FOR_APPROVAL and creates an approval", async () => {
+  it("renders a passing script, then marks it READY_FOR_APPROVAL with an approval", async () => {
     c = await createTestCompany();
     const pid = await runToApproval(c);
     const qc = (await c.ctx.repos.tasks.list({ where: { type: "quality_check" } }))[0]!;
-    expect((qc.output as Record<string, unknown>).status).toBe("READY_FOR_APPROVAL");
+    expect((qc.output as Record<string, unknown>).status).toBe("RENDERING");
+    const render = (await c.ctx.repos.tasks.list({ where: { type: "render" } }))[0]!;
+    expect(render.status).toBe("COMPLETED");
+    expect((render.output as Record<string, unknown>).status).toBe("READY_FOR_APPROVAL");
     const video = await c.ctx.repos.videos.get((qc.output as Record<string, string>).video_id!);
     expect(video?.status).toBe("ready_for_approval");
+    expect(video?.video_file_path).toMatch(/\.mp4$/);
     expect(video?.privacy_status).toBe("private");
     expect((await c.ctx.repos.pipelines.get(pid))?.status).toBe("WAITING_APPROVAL");
   });

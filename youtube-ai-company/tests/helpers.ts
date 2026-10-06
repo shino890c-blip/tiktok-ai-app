@@ -11,6 +11,7 @@ import { MemorySink } from "../src/logging/logger.js";
 import { MemoryChannel, MultiChannelNotificationService } from "../src/notifications/index.js";
 import { MockYouTubeProvider, type YouTubeProvider } from "../src/youtube/index.js";
 import { createLogger } from "../src/logging/logger.js";
+import { PlaceholderRenderer, type VideoRenderer } from "../src/video/renderer.js";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -24,7 +25,7 @@ export interface TestCompany extends Company {
 }
 
 export async function createTestCompany(
-  opts: { env?: Record<string, string>; clock?: Clock; llm?: LLMProvider; youtube?: YouTubeProvider } = {},
+  opts: { env?: Record<string, string>; clock?: Clock; llm?: LLMProvider; youtube?: YouTubeProvider; renderer?: VideoRenderer } = {},
 ): Promise<TestCompany> {
   const dataDir = mkdtempSync(path.join(os.tmpdir(), "ytco-test-"));
   const config = loadConfig(
@@ -37,6 +38,7 @@ export async function createTestCompany(
       RETRY_BASE_DELAY_MS: "0",
       NOTIFY_CHANNELS: "none",
       LOG_LEVEL: "DEBUG",
+      AUTOPILOT_MIN_INTERVAL_MINUTES: "0",
       ...opts.env,
     },
     ROOT,
@@ -50,6 +52,7 @@ export async function createTestCompany(
     clock: opts.clock,
     llm: opts.llm,
     youtube: opts.youtube ?? youtubeMock!,
+    renderer: opts.renderer ?? new PlaceholderRenderer(),
     notifier,
     logSinks: [logs],
   });

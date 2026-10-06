@@ -11,7 +11,7 @@ export type TaskStatus =
 
 export const ACTIVE_TASK_STATUSES: TaskStatus[] = ["PENDING", "RUNNING", "RETRYING", "WAITING_APPROVAL"];
 
-export type TaskType = "research" | "script" | "quality_check" | "publish" | "analytics" | "feedback";
+export type TaskType = "research" | "script" | "quality_check" | "render" | "publish" | "analytics" | "feedback";
 
 export type AgentName = "researcher" | "scriptwriter" | "publisher" | "analyst" | "supervisor";
 
@@ -21,6 +21,7 @@ export type PipelineStage =
   | "RESEARCH"
   | "SCRIPT"
   | "QUALITY_CHECK"
+  | "RENDER"
   | "WAITING_APPROVAL"
   | "PUBLISH"
   | "ANALYTICS"
@@ -124,6 +125,7 @@ export interface ScriptRecord extends Timestamps {
 }
 
 export type VideoStatus =
+  | "rendering"
   | "ready_for_approval"
   | "approved"
   | "rejected"

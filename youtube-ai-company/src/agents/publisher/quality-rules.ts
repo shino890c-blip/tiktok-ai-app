@@ -121,10 +121,9 @@ export function runQualityRules(s: ScriptOutput, o: QualityRuleOptions): QCIssue
   return issues;
 }
 
-export function humanChecklist(s: ScriptOutput, hasVideoFile: boolean): string[] {
+export function humanChecklist(s: ScriptOutput): string[] {
   return [
-    ...(hasVideoFile ? [] : ["動画ファイル未添付：承認時に --video-file で指定（Mockモードでは不要）"]),
-    "音声・字幕のタイミング、映像の破綻がないか実ファイルを目視確認",
+    "レンダリングされた動画（data/videos/）を再生し、音声・字幕・映像を確認",
     "BGM・効果音・素材が著作権的に利用可能か確認",
     ...s.fact_check_notes.map((n) => `事実確認: ${n}`),
   ];

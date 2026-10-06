@@ -14,7 +14,7 @@ describe("8. Supervisor task tracking", () => {
     await runToApproval(c);
     const r = await c.supervisor.statusReport();
     expect(r.agents.map((a) => a.name).sort()).toEqual(["analyst", "publisher", "researcher", "scriptwriter", "supervisor"]);
-    expect(r.tasks.COMPLETED).toBe(3);
+    expect(r.tasks.COMPLETED).toBe(4);
     expect(r.tasks.WAITING_APPROVAL).toBe(1);
     expect(r.pending_approvals).toHaveLength(1);
     expect(r.supervisor.next_actions.join("\n")).toContain("承認待ち");
@@ -159,7 +159,7 @@ describe("13. E2E pipeline (mock)", () => {
     const p = (await c.ctx.repos.pipelines.get(pid))!;
     expect(p).toMatchObject({ status: "COMPLETED", stage: "COMPLETED" });
     const tasks = await c.ctx.repos.tasks.list({ where: { pipeline_id: pid } });
-    expect(tasks.map((t) => t.type).sort()).toEqual(["analytics", "feedback", "publish", "quality_check", "research", "script"]);
+    expect(tasks.map((t) => t.type).sort()).toEqual(["analytics", "feedback", "publish", "quality_check", "render", "research", "script"]);
     for (const t of tasks) {
       expect(t.status).toBe("COMPLETED");
       expect(await c.supervisor.verifyArtifacts(t)).toEqual([]);

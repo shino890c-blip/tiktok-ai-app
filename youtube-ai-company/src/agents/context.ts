@@ -11,6 +11,7 @@ import type { KnowledgeBase } from "../knowledge/index.js";
 import type { LLMProvider, PromptLoader } from "../llm/index.js";
 import type { Logger } from "../logging/logger.js";
 import type { NotificationService } from "../notifications/index.js";
+import type { VideoRenderer } from "../video/renderer.js";
 import type { YouTubeProvider } from "../youtube/index.js";
 
 /** Dependency-injection container shared by agents and core services. */
@@ -25,6 +26,7 @@ export interface AgentContext {
   approvals: ApprovalService;
   llm: LLMProvider;
   youtube: YouTubeProvider;
+  renderer: VideoRenderer;
   notifier: NotificationService;
   knowledge: KnowledgeBase;
   experiments: ExperimentManager;

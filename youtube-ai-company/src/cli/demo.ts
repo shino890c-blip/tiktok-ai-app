@@ -8,7 +8,7 @@ const step = (n: number, title: string) => console.log(`\n\x1b[1m[${String(n).pa
 
 /**
  * Full mock E2E run in an isolated, timestamped demo database (the real DB is untouched):
- * Research → Script → QC → Approval → Mock Publish → Mock Analytics → Feedback → Knowledge → Supervisor check.
+ * Research → Script → QC → Render → Approval → Mock Publish → Mock Analytics → Feedback → Knowledge → Supervisor check.
  */
 export async function runDemo(root: string): Promise<boolean> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -73,20 +73,27 @@ export async function runDemo(root: string): Promise<boolean> {
     console.log(`  QC: passed=${String(qc?.passed)} score=${String(qc?.overall_score)} issues=${JSON.stringify(qc?.counts)}`);
     console.log(`  pipeline stage: ${p.stage}`);
 
-    step(7, "Approval待ち（READY_FOR_APPROVAL）");
+    step(7, "動画生成（ナレーション＋テロップ＋字幕 → 1080x1920 MP4）");
+    await worker.runUntilIdle({ agents: ["publisher"], types: ["render"] });
+    p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
+    const render = (await ctx.repos.tasks.list({ where: { pipeline_id: pipeline.pipeline_id, type: "render" } }))[0];
+    const ro = (render?.output ?? {}) as Record<string, unknown>;
+    console.log(`  ${render?.status}: ${String(ro.file_path ?? render?.error)}  (${String(ro.duration_sec ?? "-")}秒, narration=${String(ro.has_narration ?? "-")})`);
+
+    step(8, "Approval待ち（READY_FOR_APPROVAL）");
     const pending = await ctx.approvals.pending();
     if (!pending.length) throw new Error("No approval request was created");
     console.log(`  承認待ち: ${pending[0]!.approval_id}`);
     console.log("  （デモのため demo-operator が承認します。本番では人間が npm run approve / Dashboard で承認）");
     await ctx.approvals.approve(pending[0]!.approval_id, "demo-operator", { note: "mock E2E demo" });
 
-    step(8, "Mock Publish");
+    step(9, "Mock Publish");
     await worker.runUntilIdle({ agents: ["publisher"], types: ["publish"] });
     p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
     const video = await ctx.repos.videos.get(p.video_id!);
     console.log(`  ${video?.status}: ${video?.youtube_video_id} (${video?.privacy_status}) ${video?.youtube_url}`);
 
-    step(9, "Mock Analytics");
+    step(10, "Mock Analytics");
     await worker.runUntilIdle({ agents: ["analyst"] });
     p = (await ctx.repos.pipelines.get(pipeline.pipeline_id))!;
     const analytics = p.analytics_id ? await ctx.repos.analytics.get(p.analytics_id) : undefined;
@@ -94,13 +101,13 @@ export async function runDemo(root: string): Promise<boolean> {
     console.log(`  score=${analytics?.performance_score} success=${rep?.success} views=${(analytics?.metrics as any)?.views} 取得不可=${analytics?.unavailable_metrics.join(",")}`);
     for (const c of (rep?.recommended_changes as string[]) ?? []) console.log(`  次回の改善: ${c}`);
 
-    step(10, "Feedback → Knowledge Base 保存");
+    step(11, "Feedback → Knowledge Base 保存");
     await worker.runUntilIdle({ agents: ["supervisor"] });
     const kb = await ctx.knowledge.forVideo(p.video_id!);
     console.log(`  Knowledge entries: ${kb.length}`);
     for (const k of kb.slice(0, 5)) console.log(`   - [${k.category}/${k.polarity}] ${k.content}`);
 
-    step(11, "Supervisor 全体確認（成果物の存在・パイプライン状態）");
+    step(12, "Supervisor 全体確認（成果物の存在・パイプライン状態）");
     const actions = await supervisor.tick();
     const tasks = await ctx.repos.tasks.list({ where: { pipeline_id: pipeline.pipeline_id }, orderBy: "created_at ASC" });
     let artifactProblems = 0;

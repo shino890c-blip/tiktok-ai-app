@@ -1,3 +1,4 @@
+import { existsSync, statSync } from "node:fs";
 import { startOfUtcDay } from "../../core/clock.js";
 import { newId } from "../../core/ids.js";
 import type {
@@ -18,6 +19,7 @@ const STAGE_OF: Record<TaskType, PipelineStage> = {
   research: "RESEARCH",
   script: "SCRIPT",
   quality_check: "QUALITY_CHECK",
+  render: "RENDER",
   publish: "PUBLISH",
   analytics: "ANALYTICS",
   feedback: "FEEDBACK",
@@ -27,6 +29,7 @@ const TASK_OF: Partial<Record<PipelineStage, TaskType>> = {
   RESEARCH: "research",
   SCRIPT: "script",
   QUALITY_CHECK: "quality_check",
+  RENDER: "render",
   PUBLISH: "publish",
   ANALYTICS: "analytics",
   FEEDBACK: "feedback",
@@ -152,11 +155,19 @@ export class Supervisor {
       case "quality_check": {
         if (out.passed === true) {
           if (!out.video_id || !(await repos.videos.get(out.video_id))) problems.push("video record missing after QC pass");
-          if (!out.approval_id || !(await repos.approvals.get(out.approval_id))) problems.push("approval request missing after QC pass");
         } else if (out.passed === false) {
           const s = out.script_id ? await repos.scripts.get(out.script_id) : undefined;
           if (!s?.qc_report) problems.push("QC report missing on failed script");
         } else problems.push("QC result missing");
+        break;
+      }
+      case "render": {
+        const v = out.video_id ? await repos.videos.get(out.video_id) : undefined;
+        if (!v) problems.push("video record missing after render");
+        else if (!v.video_file_path || !existsSync(v.video_file_path) || statSync(v.video_file_path).size === 0) {
+          problems.push(`rendered video file missing: ${v.video_file_path ?? "(none)"}`);
+        }
+        if (!out.approval_id || !(await repos.approvals.get(out.approval_id))) problems.push("approval request missing after render");
         break;
       }
       case "publish": {
@@ -305,12 +316,8 @@ export class Supervisor {
         const pipeline = await repos.pipelines.get(pid);
         if (!pipeline) return;
         if (out.passed) {
-          if (await this.move(pid, "QUALITY_CHECK", { stage: "WAITING_APPROVAL", status: "WAITING_APPROVAL", video_id: out.video_id })) {
-            await tasks.create("publish", { pipelineId: pid, videoId: out.video_id, approvalId: out.approval_id }, { pipelineId: pid, status: "WAITING_APPROVAL" });
-            if (config.pipeline.autoPublish) {
-              this.log.warn("supervisor.auto_publish", "AUTO_PUBLISH=true: approving automatically", { pipeline_id: pid });
-              await approvals.approve(out.approval_id, "system:auto_publish", { note: "AUTO_PUBLISH=true" });
-            }
+          if (await this.move(pid, "QUALITY_CHECK", { stage: "RENDER", video_id: out.video_id })) {
+            await tasks.create("render", { pipelineId: pid, videoId: out.video_id }, { pipelineId: pid });
           }
         } else if (pipeline.revision_count < config.pipeline.maxScriptRevisions) {
           if (await this.move(pid, "QUALITY_CHECK", { stage: "SCRIPT", revision_count: pipeline.revision_count + 1 })) {
@@ -335,6 +342,16 @@ export class Supervisor {
         break;
       }
 
+      case "render":
+        if (await this.move(pid, "RENDER", { stage: "WAITING_APPROVAL", status: "WAITING_APPROVAL", video_id: out.video_id })) {
+          await tasks.create("publish", { pipelineId: pid, videoId: out.video_id, approvalId: out.approval_id }, { pipelineId: pid, status: "WAITING_APPROVAL" });
+          if (config.pipeline.autoPublish) {
+            this.log.warn("supervisor.auto_publish", "AUTO_PUBLISH=true: approving automatically", { pipeline_id: pid });
+            await approvals.approve(out.approval_id, "system:auto_publish", { note: "AUTO_PUBLISH=true" });
+          }
+        }
+        break;
+
       case "publish": {
         const runAt = new Date(clock.now().getTime() + config.youtube.analyticsDelayHours * 3_600_000);
         if (await this.move(pid, "PUBLISH", { stage: "ANALYTICS", status: "ACTIVE" })) {
@@ -346,6 +363,7 @@ export class Supervisor {
             taskId: task.task_id,
             action: `分析は ${runAt.toISOString()} 以降に実行`,
           });
+          await this.maybeContinue(); // a production slot is free again; no need to wait for analytics
         }
         break;
       }
@@ -372,12 +390,52 @@ export class Supervisor {
     return (await this.ctx.repos.tasks.list({ where: { type } })).some(match);
   }
 
-  private async maybeContinue(): Promise<void> {
-    if (!this.ctx.config.pipeline.autoContinue) return;
-    const active = await this.ctx.repos.pipelines.count({ status: "ACTIVE" });
-    if (active > 0) return;
-    const r = await this.startPipeline("新しい動画を作る (auto-continue)");
-    if (!r.pipeline) this.log.info("supervisor.auto_continue_paused", r.reason ?? "not started");
+  private autopilotPausedReason: string | null = null;
+
+  /**
+   * Auto-continue (autopilot): keeps up to AUTOPILOT_MAX_CONCURRENT videos in production,
+   * spaced by AUTOPILOT_MIN_INTERVAL_MINUTES, capped by DAILY_VIDEO_LIMIT, and paused by a
+   * circuit breaker after AUTOPILOT_MAX_CONSECUTIVE_FAILURES failed pipelines in a row.
+   * Videos waiting for analytics don't block the next production.
+   */
+  async maybeContinue(): Promise<string | null> {
+    const { config, repos, clock, notifier } = this.ctx;
+    const p = config.pipeline;
+    if (!p.autoContinue) return null;
+
+    const recent = await repos.pipelines.list({ limit: p.autopilotMaxConsecutiveFailures, orderBy: "created_at DESC" });
+    const tripped = recent.length >= p.autopilotMaxConsecutiveFailures && recent.every((r) => r.status === "FAILED");
+    if (tripped) {
+      const reason = `${p.autopilotMaxConsecutiveFailures} pipelines failed in a row`;
+      if (this.autopilotPausedReason !== reason) {
+        this.autopilotPausedReason = reason;
+        await notifier.notify({
+          level: "CRITICAL",
+          title: "オートパイロットを一時停止しました",
+          agent: "supervisor",
+          error: reason,
+          retry: "自動再開しない（暴走防止）",
+          action: "原因を確認して修正後、npm run goal で1本成功させると再開します",
+        });
+      }
+      return null;
+    }
+    this.autopilotPausedReason = null;
+
+    const inProduction =
+      (await repos.pipelines.count({ status: "ACTIVE", stage: ["RESEARCH", "SCRIPT", "QUALITY_CHECK", "RENDER", "PUBLISH"] })) +
+      (await repos.pipelines.count({ status: "WAITING_APPROVAL" }));
+    if (inProduction >= p.autopilotMaxConcurrent) return null;
+
+    const last = recent[0];
+    if (last && clock.now().getTime() - new Date(last.created_at).getTime() < p.autopilotMinIntervalMinutes * 60_000) return null;
+
+    const r = await this.startPipeline("新しい動画を作る (autopilot)");
+    if (!r.pipeline) {
+      this.log.info("supervisor.auto_continue_paused", r.reason ?? "not started");
+      return null;
+    }
+    return r.pipeline.pipeline_id;
   }
 
   /** Human retry: re-queue a FAILED task and re-activate its pipeline. */
@@ -409,7 +467,8 @@ export class Supervisor {
     try {
       actions.push(...(await this.auditActivePipelines()));
       actions.push(...(await this.ensureAnalyticsAndFeedback()));
-      await this.maybeContinue();
+      const started = await this.maybeContinue();
+      if (started) actions.push(`autopilot_started:${started}`);
     } finally {
       this.lastTick = clock.now().toISOString();
       await state.heartbeat("supervisor", { status: "idle", currentTask: null, taskId: null });
@@ -481,6 +540,8 @@ export class Supervisor {
         return p.idea_id ? { pipelineId: p.pipeline_id, ideaId: p.idea_id } : null;
       case "QUALITY_CHECK":
         return p.script_id ? { pipelineId: p.pipeline_id, scriptId: p.script_id } : null;
+      case "RENDER":
+        return p.video_id ? { pipelineId: p.pipeline_id, videoId: p.video_id } : null;
       case "PUBLISH":
         return p.video_id ? { pipelineId: p.pipeline_id, videoId: p.video_id } : null;
       case "ANALYTICS":

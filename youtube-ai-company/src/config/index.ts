@@ -5,6 +5,8 @@ import { ConfigError } from "../core/errors.js";
 export type LLMProviderName = "mock" | "anthropic" | "openai";
 export type YouTubeProviderName = "mock" | "youtube";
 export type PrivacyStatus = "private" | "unlisted" | "public";
+export type TTSProviderName = "silent" | "voicevox" | "openai";
+export type RendererName = "ffmpeg" | "placeholder";
 export type LogLevelName = "DEBUG" | "INFO" | "WARN" | "ERROR" | "CRITICAL";
 
 export interface AppConfig {
@@ -67,9 +69,35 @@ export interface AppConfig {
     workerPollIntervalMs: number;
     retryBaseDelayMs: number;
     autoContinue: boolean;
+    /** Max pipelines in production (research → publish) at the same time when auto-continuing. */
+    autopilotMaxConcurrent: number;
+    /** Minimum minutes between two automatically started pipelines (spreads uploads over the day). */
+    autopilotMinIntervalMinutes: number;
+    /** Auto-continue pauses after this many failed pipelines in a row (circuit breaker). */
+    autopilotMaxConsecutiveFailures: number;
     shortsMaxDurationSec: number;
     shortsMinDurationSec: number;
     experimentMinSamples: number;
+  };
+
+  video: {
+    renderer: RendererName;
+    ffmpegPath: string;
+    ffprobePath: string;
+    fontName?: string;
+    bgmFile?: string;
+    bgmVolume: number;
+    /** Narration may be sped up by at most this factor to fit the Shorts length limit. */
+    maxSpeedup: number;
+    tts: {
+      provider: TTSProviderName;
+      voicevoxUrl: string;
+      voicevoxSpeaker: number;
+      voicevoxSpeed: number;
+      voicevoxCredit: string;
+      openaiModel: string;
+      openaiVoice: string;
+    };
   };
 
   dashboard: {
@@ -213,9 +241,31 @@ export function loadConfig(env: Env = process.env, rootDir: string = process.cwd
       workerPollIntervalMs: int(env, "WORKER_POLL_INTERVAL_MS", 2000, 100),
       retryBaseDelayMs: int(env, "RETRY_BASE_DELAY_MS", 5000, 0),
       autoContinue: bool(env, "AUTO_CONTINUE", false),
+      autopilotMaxConcurrent: int(env, "AUTOPILOT_MAX_CONCURRENT", 1, 1, 10),
+      autopilotMinIntervalMinutes: num(env, "AUTOPILOT_MIN_INTERVAL_MINUTES", 180),
+      autopilotMaxConsecutiveFailures: int(env, "AUTOPILOT_MAX_CONSECUTIVE_FAILURES", 2, 1, 20),
       shortsMaxDurationSec: int(env, "SHORTS_MAX_DURATION_SEC", 60, 5, 180),
       shortsMinDurationSec: int(env, "SHORTS_MIN_DURATION_SEC", 10, 1, 60),
       experimentMinSamples: int(env, "EXPERIMENT_MIN_SAMPLES", 3, 1, 50),
+    },
+
+    video: {
+      renderer: oneOf<RendererName>(env, "VIDEO_RENDERER", ["ffmpeg", "placeholder"], "ffmpeg"),
+      ffmpegPath: str(env, "FFMPEG_PATH", "ffmpeg"),
+      ffprobePath: str(env, "FFPROBE_PATH", "ffprobe"),
+      fontName: optional(env, "VIDEO_FONT_NAME"),
+      bgmFile: optional(env, "BGM_FILE") ? path.resolve(rootDir, optional(env, "BGM_FILE")!) : undefined,
+      bgmVolume: num(env, "BGM_VOLUME", 0.12),
+      maxSpeedup: num(env, "NARRATION_MAX_SPEEDUP", 1.3),
+      tts: {
+        provider: oneOf<TTSProviderName>(env, "TTS_PROVIDER", ["silent", "voicevox", "openai"], mockMode ? "silent" : "voicevox"),
+        voicevoxUrl: str(env, "VOICEVOX_URL", "http://127.0.0.1:50021"),
+        voicevoxSpeaker: int(env, "VOICEVOX_SPEAKER", 3, 0, 10_000),
+        voicevoxSpeed: num(env, "VOICEVOX_SPEED", 1.15),
+        voicevoxCredit: str(env, "VOICEVOX_CREDIT", "VOICEVOX:ずんだもん"),
+        openaiModel: str(env, "OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
+        openaiVoice: str(env, "OPENAI_TTS_VOICE", "alloy"),
+      },
     },
 
     dashboard: {
@@ -256,6 +306,10 @@ function validateConfig(c: AppConfig): void {
   if (c.youtube.defaultPrivacy === "public" && !c.youtube.allowPublic) {
     throw new ConfigError("YOUTUBE_DEFAULT_PRIVACY=public requires YOUTUBE_ALLOW_PUBLIC=true");
   }
+  if (c.video.tts.provider === "openai" && !c.llm.openaiApiKey) {
+    throw new ConfigError("TTS_PROVIDER=openai requires OPENAI_API_KEY");
+  }
+  if (c.video.maxSpeedup < 1 || c.video.maxSpeedup > 2) throw new ConfigError("NARRATION_MAX_SPEEDUP must be between 1 and 2");
   if (c.pipeline.shortsMinDurationSec >= c.pipeline.shortsMaxDurationSec) {
     throw new ConfigError("SHORTS_MIN_DURATION_SEC must be smaller than SHORTS_MAX_DURATION_SEC");
   }

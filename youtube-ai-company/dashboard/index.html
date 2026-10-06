@@ -112,8 +112,18 @@
   const num = (n) => n === null || n === undefined ? "-" : Number(n).toLocaleString();
   const toast = (msg) => { const t = $("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => (t.style.display = "none"), 3500); };
 
+  // DASHBOARD_TOKEN can be passed once as ?token=... (kept for this tab only).
+  let token = null;
+  try {
+    const fromUrl = new URLSearchParams(location.search).get("token");
+    if (fromUrl) { sessionStorage.setItem("ytco-token", fromUrl); history.replaceState(null, "", location.pathname); }
+    token = sessionStorage.getItem("ytco-token");
+  } catch { /* storage unavailable */ }
+
   async function post(url, body) {
-    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+    const headers = { "content-type": "application/json" };
+    if (token) headers.authorization = `Bearer ${token}`;
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body || {}) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || data.reason || `HTTP ${res.status}`);
     return data;

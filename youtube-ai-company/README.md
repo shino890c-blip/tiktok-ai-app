@@ -1,13 +1,58 @@
 # AI YouTube Company 🎬🤖
 
-複数のAIエージェントが協力して **YouTube Shorts のリサーチ → 企画 → 台本 → 品質チェック → (人間の承認) → 投稿 → 分析 → 学習** を回し続ける「AI YouTube動画制作会社」です。
+複数のAIエージェントが協力して **YouTube Shorts のリサーチ → 企画 → 台本 → 品質チェック → 動画生成 → (人間の承認) → 投稿 → 分析 → 学習** を回し続ける「AI YouTube動画制作会社」です。
 
 - 5人のAI社員（独立したAgent）＋ Supervisor（オーケストレーター）＋ 独立Watchdog
 - APIキーなしで **Mockモード** のまま全工程が動く（E2Eテスト済み）
 - **自動公開はデフォルトOFF**。投稿前に必ず人間の承認を挟む
 - LLM / YouTube / DB / 通知はすべてインターフェースで抽象化（差し替え可能）
 
-> ⚠️ このシステムは **動画ファイル（映像・音声）のレンダリングは行いません**。台本・テロップ・映像指示までを生成します。実際にYouTubeへアップロードする場合は、台本をもとに作った動画ファイルを承認時に `--video-file` で添付してください（詳しくは「実際の運用開始」）。
+> 生成される動画は「AI音声ナレーション＋大きなテロップ＋字幕＋場面ごとの背景色＋進行バー」の縦型(1080×1920)動画です。実写・素材映像は使いません（著作権リスクを避けるため）。
+
+---
+
+## 🚀 全自動運用（オートパイロット）— まずここだけ読めばOK
+
+```bash
+npm run doctor      # 何が設定済みで、あと何をすればいいかを表示
+npm run autopilot   # 全自動で回し続ける（Ctrl+Cで停止）
+```
+
+`npm run autopilot` は **調査 → 台本 → 品質チェック → 動画生成 → 投稿 → 分析 → 学習 → 次の動画** を人の操作なしで繰り返します（`AUTO_PUBLISH` と `AUTO_CONTINUE` を自動でONにします）。暴走しないように次の歯止めがあります:
+
+- 1日 `DAILY_VIDEO_LIMIT`（3）本まで、`AUTOPILOT_MIN_INTERVAL_MINUTES`（180）分間隔
+- 連続 `AUTOPILOT_MAX_CONSECUTIVE_FAILURES`（2）回失敗すると自動停止してあなたに通知
+- 投稿は `YOUTUBE_ALLOW_PUBLIC=true` にするまで **非公開(private)**
+- 投稿が成功したか不明な状態になったら中止（二重投稿しない）
+
+### 本番で全自動にするまでの手順（あなたにしかできない部分）
+
+| # | やること | 所要時間 |
+|---|---|---|
+| 1 | AIのAPIキーを取得（[Anthropic](https://console.anthropic.com/) または OpenAI）→ `.env` に `ANTHROPIC_API_KEY=...` | 5分 |
+| 2 | Google Cloud で YouTube API を有効化し、APIキーと OAuthクライアントを作成 →`.env` に設定（[手順](#youtube-api-設定方法)） | 15分 |
+| 3 | `npm run youtube:auth`（Dockerなら下記コマンド）を **1回だけ** 実行し、ブラウザで投稿用チャンネルを許可 | 2分 |
+| 4 | `.env` で `MOCK_MODE=false` / `LLM_PROVIDER=anthropic` / `LLM_MODEL=...` / `YOUTUBE_PROVIDER=youtube` / `YOUTUBE_UPLOAD_ENABLED=true` | 1分 |
+| 5 | （任意）スマホ通知: Discordのウェブフックを作り `DISCORD_WEBHOOK_URL=...` と `NOTIFY_CHANNELS=console,discord` | 3分 |
+| 6 | `npm run doctor` で全部 ✔ になったら、常時起動のPC/サーバーで `docker compose up -d --build` | 5分 |
+
+最初の数本は非公開で投稿されるので、YouTube Studio で確認してから `YOUTUBE_ALLOW_PUBLIC=true` と `YOUTUBE_DEFAULT_PRIVACY=public` で公開に切り替えてください。
+
+### 24時間動かす（Docker）
+
+PCを閉じると止まるので、常時起動のマシン（自宅PC / 月数百円〜のVPS）で Docker を使うのがおすすめです。`docker compose` が ffmpeg・日本語フォント・無料の日本語音声エンジン（VOICEVOX）込みで起動し、再起動後も自動で復帰します。
+
+```bash
+cp .env.example .env   # 編集して上の手順1〜5を設定
+mkdir -p secrets
+docker compose run --rm --service-ports app node dist/cli/index.js youtube:auth   # 初回だけ
+docker compose up -d --build        # 起動
+docker compose logs -f app          # 様子を見る
+# Dashboard: http://127.0.0.1:3100/?token=<DASHBOARD_TOKEN>
+docker compose down                 # 停止
+```
+
+`docker compose run ... node dist/cli/index.js doctor` で、コンテナ内の設定診断もできます。
 
 ---
 
@@ -37,7 +82,7 @@
                          └───────┬───────────────────────────────────────────────────────────────▲─────────┘
                                  │ 次のTaskを作成（DB上の条件付き更新で重複防止）                    │ task.completed / failed
   Goal「新しい動画を作る」        ▼                                                                    │
-  ──────────────▶  Researcher ─▶ Script Writer ─▶ Publisher(QC) ─▶ [人間の承認] ─▶ Publisher(Publish) ─▶ Analyst ─▶ Supervisor(Feedback)
+  ──────────────▶  Researcher ─▶ Script Writer ─▶ Publisher(QC) ─▶ Publisher(Render) ─▶ [承認 or AUTO_PUBLISH] ─▶ Publisher(Publish) ─▶ Analyst ─▶ Supervisor(Feedback)
                      ▲             ▲  差し戻し(最大N回) │                                                         │
                      │             └───────────────────┘                                                         ▼
                      └──────────────────────── Knowledge Base / Experiments（次回のプロンプト・判断材料）◀────────┘
@@ -54,6 +99,7 @@
 | Scheduler | `src/core/scheduler` | 重複実行しない周期ジョブ |
 | Watchdog | `src/core/watchdog` | heartbeat/timeout 検知と復旧 |
 | State Manager | `src/core/state-manager` | Agentの状態・heartbeat |
+| 動画生成 | `src/video/` | `VideoRenderer`（ffmpeg）＋ `TTSProvider`（silent / VOICEVOX / OpenAI）＋ ASS字幕 |
 | Worker | `src/core/worker.ts` | キューからTaskを取りAgentで実行。DBエラーで安全停止 |
 | 承認 | `src/core/approvals.ts` | Human-in-the-loop |
 | LLM | `src/llm/` | `LLMProvider` インターフェース：mock / anthropic / openai(互換) |
@@ -79,7 +125,7 @@
 |---|---|---|---|---|
 | 1 | **YouTube Researcher** (`researcher`) | 市場調査のプロ | `research` | 急上昇Shorts・尺・タイトルパターン・上位コメント・自社の過去実績・Knowledgeを分析し、**伸びている理由を抽象化したオリジナル企画**を3〜5件、各企画に「作る価値」を付けて出力。既存タイトルと酷似した企画は自動で除外（コピー禁止）、過去に失敗したテーマも除外。最良の企画を選定し実験を割り当て。→ `data/research/*.json` |
 | 2 | **Script Writer** (`scriptwriter`) | 視聴維持率を意識した脚本家 | `script` | タイトル候補3つ、0〜2秒フック、ナレーション、テロップ、シーン構成、映像/効果音/BGM指示、CTA、想定尺、視聴維持ポイント、事実確認メモ。QCからの差し戻しを反映して改稿。→ `data/scripts/*.json` |
-| 3 | **Publisher / Quality Controller** (`publisher`) | 品質管理責任者 | `quality_check`, `publish` | ルールチェック（タイトル長、フック、尺、シーン連続性、**ナレーション速度による音声/字幕ズレ**、テロップ、誤字、CTA、説明文、ハッシュタグ、公開設定、**虚偽・誇大表現・医療系注意書き**）＋LLMレビュー。合格→ `READY_FOR_APPROVAL`、不合格→Script Writerへ差し戻し。投稿は **承認済みのみ**、二重投稿防止、状態不明なら中止。 |
+| 3 | **Publisher / Quality Controller** (`publisher`) | 品質管理責任者 | `quality_check`, `render`, `publish` | ルールチェック（タイトル長、フック、尺、シーン連続性、**ナレーション速度による音声/字幕ズレ**、テロップ、誤字、CTA、説明文、ハッシュタグ、公開設定、**虚偽・誇大表現・医療系注意書き**）＋LLMレビュー。合格→**動画生成**（ナレーション音声→シーン長を音声に合わせて調整→テロップ/字幕/背景/進行バーを合成→ffprobeで検証）→ `READY_FOR_APPROVAL`、不合格→Script Writerへ差し戻し。→ `data/videos/*.mp4`投稿は **承認済みのみ**、二重投稿防止、状態不明なら中止。 |
 | 4 | **Analytics & Growth Strategist** (`analyst`) | データ分析・成長戦略責任者 | `analytics` | 取得できた指標のみでスコア化（取れない指標は推測しない）、維持率の離脱点、過去比較、実験の成否判定、**次の動画で実行すべき改善事項**。Researcher / Script Writer 向けフィードバックを作成。→ `data/analytics/*.json`, `data/feedback/*.json` |
 | 5 | **Supervisor / Orchestrator** (`supervisor`) | AI会社のオペレーション責任者 | `feedback` + オーケストレーション | 次に何をすべきか判断、Task作成、**成果物の存在検証**、停滞パイプラインの復旧、Knowledge Base への反映、実験結果の記録、日次上限、人間への通知。 |
 
@@ -91,7 +137,8 @@
 |---|---|---|
 | research | research DB行 + JSONファイル + 選定アイデア | Taskを再実行（上限内）、下流Taskをキャンセル、ステージを巻き戻し |
 | script | script DB行 + JSONファイル | 同上 |
-| quality_check | 合格なら video行 + approval行 / 不合格なら QCレポート | 同上 |
+| quality_check | 合格なら video行 / 不合格なら QCレポート | 同上 |
+| render | 動画ファイル（空でない）+ approval行 | 同上 |
 | publish | **YouTube video ID** と `published` 状態 | **自動再実行しない**（二重投稿防止）→ FAILED + CRITICAL通知 |
 | analytics | analytics DB行 + JSONファイル | 再実行 |
 | feedback | Knowledge Base のエントリ | 再実行 / 完了済みパイプラインに反映が無ければ feedback を再キュー |
@@ -100,7 +147,7 @@
 
 ## セットアップ
 
-必要環境: **Node.js 22.13 以上**（SQLite に Node 標準の `node:sqlite` を使うため、ネイティブビルド不要）
+必要環境: **Node.js 22.13 以上**（SQLite に Node 標準の `node:sqlite` を使うため、ネイティブビルド不要）、**ffmpeg**（動画生成。Mac: `brew install ffmpeg`、Docker利用時は不要）、日本語フォント
 
 ```bash
 cd youtube-ai-company
@@ -128,7 +175,11 @@ DB初期化 → Mockモード → 5 Agent起動 → Research Task作成 → Rese
 ## 実行方法（CLI）
 
 ```bash
-# 常駐（Worker + Supervisor + Watchdog + Dashboard）
+# 全自動（オートパイロット）
+npm run doctor
+npm run autopilot
+
+# 常駐（承認は人間が行う）（Worker + Supervisor + Watchdog + Dashboard）
 npm run start
 npm run start -- --goal "新しい動画を作る"   # 起動と同時にGoalを与える
 npm run dev                                   # ファイル変更で再起動
@@ -153,7 +204,7 @@ npm run cli -- run    # 実行可能な全タスクを処理
 
 # 人間の操作
 npm run approvals
-npm run approve -- <approval_id> [--by 名前] [--note メモ] [--video-file ./render/out.mp4] [--run]
+npm run approve -- <approval_id> [--by 名前] [--note メモ] [--video-file 差し替え動画.mp4] [--run]
 npm run reject  -- <approval_id> --note "理由"
 npm run retry                     # FAILEDタスク一覧
 npm run retry -- <task_id>        # 原因確認後に再実行
@@ -184,7 +235,7 @@ npm run build && npm run start:prod
 
 ## Approval（人間の承認）
 
-1. QC合格 → 動画レコードが `ready_for_approval`、publish Task は `WAITING_APPROVAL`、承認リクエストを通知
+1. QC合格 → 動画生成 → 動画レコードが `ready_for_approval`、publish Task は `WAITING_APPROVAL`、承認リクエストを通知（`data/videos/` の実際の動画を見て判断できます）
 2. `npm run approvals` で内容と**確認事項チェックリスト**（動画ファイル添付、音声/字幕/映像の目視確認、BGMの権利、事実確認）を表示
 3. `npm run approve -- <id>` または Dashboard で承認 → publish Task が `PENDING` になり Worker が投稿
 4. `npm run reject -- <id> --note "理由"` → publish Task は `CANCELLED`
@@ -290,7 +341,7 @@ npm run typecheck
 npm run build
 ```
 
-カバー範囲: Researcher正常終了／コピー除外、Script Writer正常終了／不正入力は非リトライ、QCルール、QC合格→承認待ち、QC不合格→差し戻し→上限でFAILED、承認・却下・未承認投稿の拒否・AUTO_PUBLISH、Mock Publish／二重投稿防止／状態不明時の中止、Analytics（取得不可指標を推測しない）、Knowledge Base保存、Supervisorのタスク追跡・停滞復旧、Watchdog（heartbeat喪失→再起動・再実行、タイムアウト→上限でFAILED、遅延完了の無視）、Retry、最大Retry超過でFAILED＋CRITICAL通知、成果物欠落検知（research JSON削除・publishのID欠落・KB未反映）、E2E、AUTO_CONTINUE＋日次上限、設定の安全デフォルト、構造化ログ、Dashboard API（トークン認可）。
+カバー範囲: 動画生成（ffmpegで実際に1080×1920動画を生成・検証、VOICEVOX連携、尺超過の拒否、字幕の折り返し）、オートパイロット（分析待ちでも次を制作・間隔・日次上限・連続失敗で停止）、Researcher正常終了／コピー除外、Script Writer正常終了／不正入力は非リトライ、QCルール、QC合格→承認待ち、QC不合格→差し戻し→上限でFAILED、承認・却下・未承認投稿の拒否・AUTO_PUBLISH、Mock Publish／二重投稿防止／状態不明時の中止、Analytics（取得不可指標を推測しない）、Knowledge Base保存、Supervisorのタスク追跡・停滞復旧、Watchdog（heartbeat喪失→再起動・再実行、タイムアウト→上限でFAILED、遅延完了の無視）、Retry、最大Retry超過でFAILED＋CRITICAL通知、成果物欠落検知（research JSON削除・publishのID欠落・KB未反映）、E2E、AUTO_CONTINUE＋日次上限、設定の安全デフォルト、構造化ログ、Dashboard API（トークン認可）。
 
 ---
 
@@ -302,7 +353,12 @@ npm run build
 | `[CONFIG_ERROR] LLM_PROVIDER=anthropic requires ANTHROPIC_API_KEY` | `.env` にキーを設定するか `MOCK_MODE=true` |
 | 承認したのに投稿されない | `npm run start` / `npm run worker` が起動しているか確認。単発なら `npm run publish` |
 | `UPLOAD_DISABLED` | 実アップロードには `YOUTUBE_UPLOAD_ENABLED=true` が必要 |
-| `NO_VIDEO_FILE` | 承認時に `--video-file path/to/video.mp4` を指定 |
+| `NO_VIDEO_FILE` | 動画生成が完了していません。`npm run status` で render タスクを確認 |
+| `FFMPEG_NOT_FOUND` | ffmpeg をインストール（Mac: `brew install ffmpeg`）するか Docker を使う |
+| `VOICEVOXに接続できません` | VOICEVOX を起動（`docker compose up -d` なら自動）。または `TTS_PROVIDER=openai` |
+| `NARRATION_TOO_LONG` | ナレーションが長すぎてShortsの尺に収まらない。台本が自動で短くならない場合は `SHORTS_MAX_DURATION_SEC` を見直し |
+| オートパイロットが止まった | 連続失敗で安全停止しています。通知とログで原因を直し、`npm run goal -- --run` で1本成功させると再開 |
+| 字幕の文字が □ になる | 日本語フォントを入れるか `VIDEO_FONT_NAME` を設定 |
 | `PUBLISH_UNKNOWN_STATE` | アップロードが途中で切れた可能性。YouTube Studio で動画の有無を確認してから対応（自動再投稿はしません） |
 | `QUOTA_EXCEEDED` | 日次クォータ上限。翌日（UTC）に再開、または `YOUTUBE_DAILY_QUOTA_UNITS` を見直し |
 | `DAILY_VIDEO_LIMIT reached` | 1日の上限に到達。翌日（UTC）に自動で解除 |
