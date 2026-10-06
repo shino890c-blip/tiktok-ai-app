@@ -226,6 +226,11 @@ CREATE TABLE IF NOT EXISTS api_usage (
     name: "video_delivery",
     sql: `ALTER TABLE videos ADD COLUMN delivery_path TEXT;`,
   },
+  {
+    version: 3,
+    name: "pipeline_source",
+    sql: `ALTER TABLE pipelines ADD COLUMN source TEXT NOT NULL DEFAULT 'ai';`,
+  },
 ];
 
 export async function migrate(db: SqlDatabase, nowIso: string): Promise<number[]> {

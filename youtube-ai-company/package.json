@@ -23,6 +23,8 @@
     "publish": "npm run cli -- publish",
     "analyze": "npm run cli -- analyze",
     "feedback": "npm run cli -- feedback",
+    "chatgpt:prompt": "npm run cli -- chatgpt:prompt",
+    "chatgpt:import": "npm run cli -- chatgpt:import",
     "deliveries": "npm run cli -- deliveries",
     "report": "npm run cli -- report",
     "approvals": "npm run cli -- approvals",

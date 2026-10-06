@@ -42,6 +42,12 @@
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .mode { font-size: 12px; }
   .scroll { overflow-x: auto; }
+  textarea { width: 100%; min-height: 140px; font: 13px/1.45 ui-monospace, Menlo, monospace; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; resize: vertical; }
+  .steps { display: grid; gap: 12px; }
+  .stepnum { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; margin-right: 6px; }
+  a.btn { text-decoration: none; display: inline-block; font: inherit; border: 1px solid var(--border); background: var(--chip); color: var(--text); padding: 4px 10px; border-radius: 6px; }
+  #importResult:empty { display: none; }
+  #importResult { background: var(--chip); border-radius: 8px; padding: 10px; }
   #toast { position: fixed; bottom: 16px; left: 16px; right: 16px; max-width: 480px; margin: 0 auto; background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 8px; display: none; }
 </style>
 </head>
@@ -53,10 +59,34 @@
   </div>
   <div class="row">
     <span class="muted" id="updated"></span>
-    <button class="primary" id="goalBtn">新しい動画を作る</button>
+    <button id="goalBtn" title="ChatGPTを使わず、内蔵AIだけで1本作ります">内蔵AIで1本作る</button>
   </div>
 </header>
 <main>
+  <section class="wide">
+    <h2>ChatGPTで台本を作る（APIキー不要）</h2>
+    <div class="steps">
+      <div class="row">
+        <span><span class="stepnum">1</span>依頼文をコピーして ChatGPT に貼り付け</span>
+        <button class="primary" id="copyPromptBtn">依頼文をコピー</button>
+        <a class="btn" href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPTを開く ↗</a>
+        <span class="muted" id="remaining"></span>
+      </div>
+      <div>
+        <div style="margin-bottom:6px"><span class="stepnum">2</span>ChatGPTの回答を丸ごとコピーして、ここに貼り付け</div>
+        <textarea id="answer" placeholder="```json&#10;{ &quot;videos&quot;: [ ... ] }&#10;```"></textarea>
+      </div>
+      <div class="row">
+        <span class="stepnum">3</span>
+        <button class="primary" id="importBtn">取り込んで動画を作る</button>
+        <span class="muted">品質チェック → 動画生成 → 納品フォルダ まで自動で進みます</span>
+      </div>
+      <div id="importResult"></div>
+      <div id="fixable"></div>
+      <textarea id="promptFallback" style="display:none" readonly></textarea>
+    </div>
+  </section>
+
   <section class="wide">
     <h2>Supervisor — 今AI会社がやっていること</h2>
     <div class="row" style="margin-bottom:8px"><span>Status:</span><span id="supStatus" class="badge"></span><span class="muted" id="supTick"></span></div>
@@ -130,7 +160,9 @@
   }
 
   function render(r) {
-    $("mode").textContent = `${r.mode.mock ? "MOCK MODE" : "LIVE"} · LLM ${r.mode.llm} · YouTube ${r.mode.youtube} · AUTO_PUBLISH=${r.mode.auto_publish} · UPLOAD=${r.mode.upload_enabled}`;
+    $("mode").textContent = r.mode.publish_target === "delivery"
+      ? `納品モード · 完成動画の置き場所: ${r.mode.delivery_dir}`
+      : `${r.mode.mock ? "MOCK MODE" : "LIVE"} · LLM ${r.mode.llm} · YouTube ${r.mode.youtube} · AUTO_PUBLISH=${r.mode.auto_publish} · UPLOAD=${r.mode.upload_enabled}`;
     $("updated").textContent = `更新 ${new Date(r.generated_at).toLocaleTimeString()}`;
     $("supStatus").outerHTML = `<span id="supStatus" class="badge s-${esc(r.supervisor.status)}">${esc(r.supervisor.status)}</span>`;
     $("supTick").textContent = `last check ${ago(r.supervisor.last_tick)}`;
@@ -172,7 +204,36 @@
     $("errors").innerHTML = r.recent_errors.map((e) => `<tr><td class="muted">${ago(e.created_at)}</td><td>${badge(e.level)}</td><td>${esc(e.agent || "-")}</td><td>${esc(e.message)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">エラーなし</td></tr>`;
   }
 
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch {
+      const fb = $("promptFallback");
+      fb.style.display = "block"; fb.value = text; fb.focus(); fb.select();
+      return false;
+    }
+  }
+
+  async function copyPrompt(fixId) {
+    const res = await fetch(`/api/chatgpt/prompt${fixId ? `?fix=${encodeURIComponent(fixId)}` : ""}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const ok = await copyText(data.prompt);
+    toast(ok ? "依頼文をコピーしました。ChatGPTに貼り付けてください" : "下の欄の依頼文を全選択してコピーしてください");
+  }
+
+  async function refreshChatGPT() {
+    try {
+      const [p, f] = await Promise.all([fetch("/api/chatgpt/prompt").then((r) => r.json()), fetch("/api/chatgpt/fixable").then((r) => r.json())]);
+      $("remaining").textContent = `今日あと ${p.remaining_today} 本作れます`;
+      $("fixable").innerHTML = f.length
+        ? `<div class="muted" style="margin-bottom:4px">品質チェックで差し戻された台本（修正依頼文をChatGPTに貼って、答えを取り込み直してください）</div>` +
+          f.map((x) => `<div class="row" style="margin:4px 0"><span>${esc(x.goal)}</span><button data-fix="${esc(x.pipeline_id)}">修正依頼文をコピー</button></div>`).join("")
+        : "";
+    } catch { /* dashboard keeps working without this panel */ }
+  }
+
   async function refresh() {
+    refreshChatGPT();
     try {
       const res = await fetch("/api/status");
       render(await res.json());
@@ -193,12 +254,27 @@
         if (!note) return;
         await post(`/api/approvals/${el.dataset.reject}/reject`, { note });
         toast("却下しました");
+      } else if (el.id === "copyPromptBtn") {
+        await copyPrompt();
+      } else if (el.dataset.fix) {
+        await copyPrompt(el.dataset.fix);
+      } else if (el.id === "importBtn") {
+        const text = $("answer").value;
+        if (!text.trim()) { toast("ChatGPTの回答を貼り付けてください"); return; }
+        const r = await post("/api/chatgpt/import", { text });
+        $("importResult").innerHTML =
+          r.imported.map((x) => `<div>✔ 「${esc(x.title)}」を作成中…（完成すると納品フォルダに入ります）</div>`).join("") +
+          r.skipped.map((x) => `<div>⏸ ${esc(x.topic)}: ${esc(x.reason)}</div>`).join("");
+        if (r.imported.length) $("answer").value = "";
       } else if (el.id === "goalBtn") {
         const r = await post("/api/goal", { goal: "新しい動画を作る" });
         toast(`パイプライン開始: ${r.pipeline.pipeline_id}`);
       }
       await refresh();
-    } catch (e) { toast("エラー: " + e.message); }
+    } catch (e) {
+      if (el.id === "importBtn") $("importResult").textContent = "✖ " + e.message;
+      toast("エラー: " + e.message);
+    }
     finally { el.disabled = false; }
   });
 

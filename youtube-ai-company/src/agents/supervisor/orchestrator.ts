@@ -44,7 +44,7 @@ export interface StartPipelineResult {
 
 export interface StatusReport {
   generated_at: string;
-  mode: { mock: boolean; llm: string; youtube: string; auto_publish: boolean; upload_enabled: boolean };
+  mode: { mock: boolean; publish_target: string; delivery_dir: string; llm: string; youtube: string; auto_publish: boolean; upload_enabled: boolean };
   supervisor: { status: string; last_tick: string | null; next_actions: string[] };
   agents: AgentRecord[];
   tasks: Record<TaskStatus, number>;
@@ -117,6 +117,7 @@ export class Supervisor {
     const pipeline = await repos.pipelines.insert({
       pipeline_id: newId("pipe"),
       goal,
+      source: "ai",
       status: "ACTIVE",
       stage: "RESEARCH",
       research_id: null,
@@ -329,6 +330,18 @@ export class Supervisor {
         if (out.passed) {
           if (await this.move(pid, "QUALITY_CHECK", { stage: "RENDER", video_id: out.video_id })) {
             await tasks.create("render", { pipelineId: pid, videoId: out.video_id }, { pipelineId: pid });
+          }
+        } else if (pipeline.source === "chatgpt") {
+          // A pasted ChatGPT script is fixed by the human + ChatGPT, not by our Script Writer.
+          if (await this.move(pid, "QUALITY_CHECK", { stage: "FAILED", status: "FAILED", error: "QC failed (ChatGPT script) — fix prompt available" })) {
+            await notifier.notify({
+              level: "WARN",
+              title: "ChatGPTの台本が品質チェックで差し戻されました",
+              agent: "publisher",
+              taskId: task.task_id,
+              error: (out.revision_notes as string[] | undefined)?.slice(0, 3).join(" / ") ?? "QC failed",
+              action: `Dashboardの「修正依頼文をコピー」か npm run chatgpt:prompt -- --fix ${pid} → ChatGPTに貼って、答えを取り込み直してください`,
+            });
           }
         } else if (pipeline.revision_count < config.pipeline.maxScriptRevisions) {
           if (await this.move(pid, "QUALITY_CHECK", { stage: "SCRIPT", revision_count: pipeline.revision_count + 1 })) {
@@ -630,7 +643,9 @@ export class Supervisor {
       out.push(
         createdToday >= config.pipeline.dailyVideoLimit
           ? `本日の上限(${config.pipeline.dailyVideoLimit})に到達 → 明日まで新規制作なし`
-          : "新しい動画を作る → npm run goal",
+          : config.publishTarget === "delivery"
+            ? "新しい動画を作る → Dashboardの「ChatGPTで台本を作る」（または npm run chatgpt:prompt）"
+            : "新しい動画を作る → npm run goal",
       );
     }
     return out;
@@ -656,6 +671,8 @@ export class Supervisor {
       generated_at: clock.now().toISOString(),
       mode: {
         mock: config.mockMode,
+        publish_target: config.publishTarget,
+        delivery_dir: config.deliveryDir,
         llm: `${this.ctx.llm.name}/${this.ctx.llm.model}`,
         youtube: this.ctx.youtube.name,
         auto_publish: config.pipeline.autoPublish,

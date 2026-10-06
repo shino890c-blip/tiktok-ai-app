@@ -11,39 +11,52 @@
 
 ---
 
-## 📦 いちばん簡単な使い方：完成動画を納品してもらう（APIキー不要）
+## 📦 いちばん簡単な使い方：ChatGPTで台本 → 完成動画を納品（APIキー不要）
 
-デフォルトは **納品モード**（`PUBLISH_TARGET=delivery`）です。AIが動画を完成させて `deliveries/` フォルダに置くので、あなたはそれをYouTubeアプリで投稿するだけです。**YouTube API・Google Cloud の設定は不要です。**
+APIキーも Google Cloud も要りません。いつも使っている **ChatGPT（無料版でもOK）** に台本を書いてもらい、このシステムが動画に仕上げて `deliveries/` フォルダに納品します。
 
 ```bash
 cd youtube-ai-company
 npm install
-npm run autopilot      # 1日3本まで、自動で作り続けて納品（Ctrl+Cで停止）
-npm run deliveries     # 納品された動画の一覧
+npm run start          # 起動して http://127.0.0.1:3100 を開く
 ```
+
+Dashboard の一番上「**ChatGPTで台本を作る**」で:
+
+1. 「**依頼文をコピー**」→ ChatGPT に貼り付けて送信（今日作れる本数分の台本を頼む文章です。これまでの成績から学んだことも自動で入ります）
+2. ChatGPT の回答を**丸ごと**コピーして貼り付け
+3. 「**取り込んで動画を作る**」→ 品質チェック → 動画生成 → 納品フォルダ まで自動
+
+品質チェックで問題が見つかった台本は止まり、「**修正依頼文をコピー**」ボタンが出ます。それを ChatGPT に貼って、答えを取り込み直してください。
+
+コマンドでやる場合: `npm run chatgpt:prompt`（依頼文を `chatgpt/依頼文.txt` に保存）→ ChatGPTの回答を `chatgpt/回答.txt` に保存 → `npm run chatgpt:import`
+
+> ChatGPT の画面をプログラムで自動操作することは、ChatGPT の利用規約に反するため行いません。コピペの部分だけ手で行う方式です。
 
 納品フォルダの中身（1本ごと）:
 
 ```
-deliveries/2026-10-06_1354_玉ねぎで涙が出にくくなる切り方/
+deliveries/2026-10-06_1401_スマホの電池を長持ちさせる3つの習慣/
 ├── video.mp4               ← そのまま投稿する縦型動画
 ├── サムネイル.jpg
 ├── アップロード情報.txt     ← タイトル・説明文・タグ（コピペ用）と投稿手順
 └── 台本.json
 ```
 
-投稿して数日たったら、YouTube Studio の数字を入れるとAIが分析して次の動画に活かします（任意）:
+投稿して数日たったら、YouTube Studio の数字を入れるとAIが分析し、次の依頼文に反映します（任意）:
 
 ```bash
 npm run report -- <動画ID> --views 1200 --likes 40 --comments 3 --avg-percent 65
 ```
+
+ChatGPTを使わず内蔵AIだけで回すこともできます（`npm run autopilot`。キーなしだと内蔵サンプル5テーマの繰り返し）。
 
 ### もっと良くするには（どちらも任意）
 
 | やること | 効果 | 難しさ |
 |---|---|---|
 | 無料アプリ [VOICEVOX](https://voicevox.hiroshiba.jp/) をインストールして起動したままにし、`.env` に `TTS_PROVIDER=voicevox` | 動画にナレーション（声）が入る。**キーも登録も不要** | かんたん |
-| [Anthropic](https://console.anthropic.com/) のAPIキーを1つ取り、`.env` に `MOCK_MODE=false` / `LLM_PROVIDER=anthropic` / `LLM_MODEL=claude-sonnet-5-5` / `ANTHROPIC_API_KEY=...` | 毎回新しい企画・台本を考える（キーなしだと内蔵サンプル5テーマの繰り返し） | 5分 |
+| （ChatGPTのコピペが面倒になったら）[Anthropic](https://console.anthropic.com/) のAPIキーを1つ取り、`.env` に `MOCK_MODE=false` / `LLM_PROVIDER=anthropic` / `LLM_MODEL=claude-sonnet-5-5` / `ANTHROPIC_API_KEY=...` | 毎回新しい企画・台本を考える（キーなしだと内蔵サンプル5テーマの繰り返し） | 5分 |
 
 `npm run doctor` を実行すると、今の設定で何ができて、何を足せばよくなるかが表示されます。
 
@@ -381,7 +394,7 @@ npm run typecheck
 npm run build
 ```
 
-カバー範囲: 納品モード（承認なしでフォルダ出力・YouTube呼び出しなし・手入力の再生数から学習・偽トレンドデータを使わない）、動画生成（ffmpegで実際に1080×1920動画を生成・検証、VOICEVOX連携、尺超過の拒否、字幕の折り返し）、オートパイロット（分析待ちでも次を制作・間隔・日次上限・連続失敗で停止）、Researcher正常終了／コピー除外、Script Writer正常終了／不正入力は非リトライ、QCルール、QC合格→承認待ち、QC不合格→差し戻し→上限でFAILED、承認・却下・未承認投稿の拒否・AUTO_PUBLISH、Mock Publish／二重投稿防止／状態不明時の中止、Analytics（取得不可指標を推測しない）、Knowledge Base保存、Supervisorのタスク追跡・停滞復旧、Watchdog（heartbeat喪失→再起動・再実行、タイムアウト→上限でFAILED、遅延完了の無視）、Retry、最大Retry超過でFAILED＋CRITICAL通知、成果物欠落検知（research JSON削除・publishのID欠落・KB未反映）、E2E、AUTO_CONTINUE＋日次上限、設定の安全デフォルト、構造化ログ、Dashboard API（トークン認可）。
+カバー範囲: ChatGPTコピペ取り込み（回答の解析・日本語エラー・上限・修正依頼文・内部AIを使わないこと）、納品モード（承認なしでフォルダ出力・YouTube呼び出しなし・手入力の再生数から学習・偽トレンドデータを使わない）、動画生成（ffmpegで実際に1080×1920動画を生成・検証、VOICEVOX連携、尺超過の拒否、字幕の折り返し）、オートパイロット（分析待ちでも次を制作・間隔・日次上限・連続失敗で停止）、Researcher正常終了／コピー除外、Script Writer正常終了／不正入力は非リトライ、QCルール、QC合格→承認待ち、QC不合格→差し戻し→上限でFAILED、承認・却下・未承認投稿の拒否・AUTO_PUBLISH、Mock Publish／二重投稿防止／状態不明時の中止、Analytics（取得不可指標を推測しない）、Knowledge Base保存、Supervisorのタスク追跡・停滞復旧、Watchdog（heartbeat喪失→再起動・再実行、タイムアウト→上限でFAILED、遅延完了の無視）、Retry、最大Retry超過でFAILED＋CRITICAL通知、成果物欠落検知（research JSON削除・publishのID欠落・KB未反映）、E2E、AUTO_CONTINUE＋日次上限、設定の安全デフォルト、構造化ログ、Dashboard API（トークン認可）。
 
 ---
 

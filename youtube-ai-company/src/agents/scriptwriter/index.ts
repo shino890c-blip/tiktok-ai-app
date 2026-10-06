@@ -15,6 +15,15 @@ export function detectHookStyle(hook: string, experimentVariant?: string | null)
   return "other";
 }
 
+/** Light normalization only — real problems are left for Quality Control to catch. */
+export function normalizeScript(script: ScriptOutput): ScriptOutput {
+  script.scenes.sort((a, b) => a.start_sec - b.start_sec);
+  const lastEnd = Math.max(...script.scenes.map((s) => s.end_sec));
+  if (Math.abs(lastEnd - script.estimated_duration_sec) > 0.5) script.estimated_duration_sec = lastEnd;
+  script.hashtags = script.hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`));
+  return script;
+}
+
 /**
  * 社員2: Script Writer — 視聴維持率を意識した脚本家.
  * Turns a selected idea into a fully original Shorts script (titles x3, 0–2s hook,
@@ -77,11 +86,7 @@ export class ScriptWriterAgent extends BaseAgent {
       { baseDelayMs: config.pipeline.retryBaseDelayMs },
     );
 
-    // Light normalization only — real problems are left for Quality Control to catch.
-    script.scenes.sort((a, b) => a.start_sec - b.start_sec);
-    const lastEnd = Math.max(...script.scenes.map((s) => s.end_sec));
-    if (Math.abs(lastEnd - script.estimated_duration_sec) > 0.5) script.estimated_duration_sec = lastEnd;
-    script.hashtags = script.hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`));
+    normalizeScript(script);
 
     const version = (await repos.scripts.count({ idea_id: idea.idea_id })) + 1;
     const scriptId = newId("script");

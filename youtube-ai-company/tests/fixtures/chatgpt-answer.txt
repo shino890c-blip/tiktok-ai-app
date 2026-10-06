@@ -1,0 +1,34 @@
+もちろんです！以下が台本です。
+
+```json
+{
+  "videos": [
+    {
+      "topic": "スマホの充電を長持ちさせる習慣",
+      "hook": "スマホの電池、寝る前の充電で弱らせていませんか？",
+      "target_audience": "スマホを毎晩充電している社会人",
+      "why_worth_making": "誰でも毎日やる行動なので自分ごと化しやすく、今日から変えられる",
+      "script": {
+        "title_candidates": ["スマホの電池を長持ちさせる3つの習慣", "その充電方法、電池を弱らせてるかも", "知らないと損するスマホ充電のコツ"],
+        "hook": { "time_range": "0-2s", "narration": "スマホの電池、寝る前の充電で弱らせていませんか？", "telop": "その充電、大丈夫？", "visual": "充電中のスマホ", "intent": "自分ごと化" },
+        "scenes": [
+          { "scene_no": 1, "start_sec": 0, "end_sec": 4, "narration": "スマホの電池、寝る前の充電で弱らせていませんか？", "telop": "その充電、大丈夫？", "visual": "充電中のスマホ", "sfx": "ポン", "bgm": "軽快" },
+          { "scene_no": 2, "start_sec": 4, "end_sec": 10, "narration": "電池は満充電や高温の状態が長く続くと劣化しやすいと言われています。", "telop": "満充電と熱が苦手", "visual": "温度計", "sfx": "", "bgm": "" },
+          { "scene_no": 3, "start_sec": 10, "end_sec": 16, "narration": "1つ目、多くのスマホにある充電の最適化機能をオンにする。", "telop": "① 最適化をオン", "visual": "設定画面", "sfx": "シュッ", "bgm": "" },
+          { "scene_no": 4, "start_sec": 16, "end_sec": 22, "narration": "2つ目、充電しながらゲームなど重い作業をしない。", "telop": "② 充電中は休ませる", "visual": "ゲーム画面にバツ", "sfx": "シュッ", "bgm": "" },
+          { "scene_no": 5, "start_sec": 22, "end_sec": 30, "narration": "3つ目、布団の中など熱がこもる場所で充電しない。保存して今夜から試してみてください。", "telop": "③ 熱がこもる所はNG", "visual": "布団とスマホ", "sfx": "キラーン", "bgm": "締め" }
+        ],
+        "cta": "保存して今夜から試してみてね",
+        "estimated_duration_sec": 30,
+        "retention_points": [{ "time_sec": 4, "technique": "原因を先に提示" }, { "time_sec": 10, "technique": "番号付きで残り数を意識させる" }],
+        "description": "スマホの電池を長持ちさせる一般的なコツを30秒で紹介します。※機種によって機能名は異なります。一般的な情報です。",
+        "hashtags": ["#Shorts", "#スマホ", "#ライフハック"],
+        "bgm_direction": "明るいポップ",
+        "fact_check_notes": ["充電最適化機能の名称を主要機種で確認"]
+      }
+    }
+  ]
+}
+```
+
+ほかにもテーマが必要なら言ってください！

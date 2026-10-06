@@ -9,6 +9,8 @@ import { AppError, errorMessage } from "../core/errors.js";
 import type { TaskType } from "../database/types.js";
 import { startDashboard } from "../dashboard/server.js";
 import { GoogleOAuthClient } from "../youtube/index.js";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { buildChatGPTPrompt, importChatGPTAnswer } from "../chatgpt/index.js";
 import { runDemo } from "./demo.js";
 import { runDoctor } from "./doctor.js";
 import { printStatus } from "./format.js";
@@ -32,6 +34,11 @@ Pipeline
   script | qc | publish | analyze | feedback
                         Run pending tasks of that stage  (analyze --video <id> --now)
   run                   Run every runnable task until idle
+
+ChatGPT copy-paste (no API key)
+  chatgpt:prompt [--count N] [--fix <pipeline_id>]
+                        Write the request to chatgpt/依頼文.txt → paste it into ChatGPT
+  chatgpt:import [file] Import ChatGPT's answer (default chatgpt/回答.txt) → QC → render → deliver
 
 Delivery (PUBLISH_TARGET=delivery, default)
   deliveries            List delivered videos (folder, upload status)
@@ -75,6 +82,8 @@ const { values: flags, positionals } = parseArgs({
     "avg-percent": { type: "string" },
     "avg-duration": { type: "string" },
     url: { type: "string" },
+    fix: { type: "string" },
+    count: { type: "string" },
     "no-dashboard": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
@@ -226,6 +235,31 @@ async function main(): Promise<void> {
           console.log(`Analytics scheduled now for ${pending.length} task(s)`);
         }
         await runStage(c, ["analytics", "feedback"]);
+      });
+    case "chatgpt:prompt":
+      return withCompany(config, async (c) => {
+        const prompt = await buildChatGPTPrompt(c.ctx, { fixPipelineId: str(flags.fix), count: str(flags.count) ? Number(str(flags.count)) : undefined });
+        const dir = path.join(ROOT, "chatgpt");
+        mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, "依頼文.txt");
+        writeFileSync(file, prompt, "utf8");
+        console.log(prompt);
+        console.log(`\n────────\n✔ 上の依頼文を ${file} に保存しました。`);
+        console.log("  1. ChatGPT（https://chatgpt.com）に貼り付けて送信");
+        console.log(`  2. 回答を丸ごとコピーして ${path.join(dir, "回答.txt")} に保存`);
+        console.log("  3. npm run chatgpt:import");
+      });
+    case "chatgpt:import":
+      return withCompany(config, async (c) => {
+        const file = positionals[1] ? path.resolve(positionals[1]) : path.join(ROOT, "chatgpt", "回答.txt");
+        if (!existsSync(file)) throw new Error(`${file} がありません。ChatGPTの回答をこのファイルに保存してください`);
+        const r = await importChatGPTAnswer(c.ctx, readFileSync(file, "utf8"));
+        for (const x of r.imported) console.log(`✔ 取り込み: 「${x.title}」`);
+        for (const x of r.skipped) console.log(`⏸ ${x.topic}: ${x.reason}`);
+        if (r.imported.length) {
+          console.log("\n品質チェック → 動画生成 → 納品 を実行します…");
+          await runStage(c, ["quality_check", "render", "publish"]);
+        }
       });
     case "deliveries":
       return withCompany(config, async (c) => {

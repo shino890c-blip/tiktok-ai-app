@@ -71,6 +71,8 @@ export interface TaskRecord extends Timestamps {
 export interface PipelineRecord extends Timestamps {
   pipeline_id: string;
   goal: string;
+  /** ai = Researcher/Script Writer wrote it; chatgpt = a human pasted a ChatGPT answer. */
+  source: "ai" | "chatgpt";
   status: PipelineStatus;
   stage: PipelineStage;
   research_id: string | null;

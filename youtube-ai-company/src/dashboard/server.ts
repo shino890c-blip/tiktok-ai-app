@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 import { timingSafeEqual } from "node:crypto";
+import { buildChatGPTPrompt, fixablePipelines, importChatGPTAnswer, remainingToday } from "../chatgpt/index.js";
 import type { Company } from "../core/company.js";
 import { errorMessage, InvalidInputError } from "../core/errors.js";
 
@@ -66,13 +67,20 @@ export function startDashboard(company: Company, opts: { host: string; port: num
         const limit = Math.min(200, Number(url.searchParams.get("limit") ?? 50) || 50);
         return send(res, 200, await ctx.repos.events.list({ limit }));
       }
+      if (req.method === "GET" && url.pathname === "/api/chatgpt/prompt") {
+        const fix = url.searchParams.get("fix") ?? undefined;
+        return send(res, 200, { prompt: await buildChatGPTPrompt(ctx, { fixPipelineId: fix }), remaining_today: await remainingToday(ctx) });
+      }
+      if (req.method === "GET" && url.pathname === "/api/chatgpt/fixable") {
+        return send(res, 200, (await fixablePipelines(ctx)).map((p) => ({ pipeline_id: p.pipeline_id, goal: p.goal, error: p.error })));
+      }
       if (req.method === "GET" && url.pathname === "/api/knowledge") {
         return send(res, 200, await ctx.knowledge.list({ limit: 100 }));
       }
 
       if (req.method === "POST") {
         if (!authorized(req)) return send(res, 401, { error: "unauthorized" });
-        const body = await readBody(req);
+        const body = await readBody(req, url.pathname === "/api/chatgpt/import" ? 1_000_000 : 16_384);
         const by = typeof body.by === "string" && body.by.trim() ? `dashboard:${body.by.trim()}` : "dashboard:human";
         const m = url.pathname.match(/^\/api\/approvals\/([\w-]+)\/(approve|reject)$/);
         if (m) {
@@ -84,6 +92,12 @@ export function startDashboard(company: Company, opts: { host: string; port: num
               : await ctx.approvals.reject(id!, by, note ?? "Rejected from dashboard");
           log.info("dashboard.approval", `${action} ${id} by ${by}`);
           return send(res, 200, result);
+        }
+        if (url.pathname === "/api/chatgpt/import") {
+          if (typeof body.text !== "string" || !body.text.trim()) throw new InvalidInputError("ChatGPTの回答を貼り付けてください");
+          const r = await importChatGPTAnswer(ctx, body.text);
+          log.info("dashboard.chatgpt_import", `Imported ${r.imported.length} script(s), skipped ${r.skipped.length}`);
+          return send(res, 200, r);
         }
         if (url.pathname === "/api/goal") {
           const goal = typeof body.goal === "string" && body.goal.trim() ? body.goal.trim() : "新しい動画を作る";
