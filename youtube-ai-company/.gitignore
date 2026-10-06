@@ -1,0 +1,26 @@
+node_modules/
+dist/
+coverage/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+*.secret
+client_secret*.json
+
+# Runtime data
+logs/*
+!logs/.gitkeep
+data/*.db
+data/*.db-*
+data/research/*
+data/scripts/*
+data/analytics/*
+data/feedback/*
+data/knowledge/*
+data/videos/*
+!data/**/.gitkeep
+data/demo/

@@ -1,0 +1,47 @@
+{
+  "name": "youtube-ai-company",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI YouTube Shorts production company: 5 AI agents + Supervisor + Watchdog",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "cli": "node --disable-warning=ExperimentalWarning --import tsx src/cli/index.ts",
+    "start": "npm run cli -- start",
+    "dev": "node --disable-warning=ExperimentalWarning --import tsx --watch src/cli/index.ts start",
+    "worker": "npm run cli -- worker",
+    "supervisor": "npm run cli -- supervisor",
+    "dashboard": "npm run cli -- dashboard",
+    "goal": "npm run cli -- goal",
+    "research": "npm run cli -- research",
+    "script": "npm run cli -- script",
+    "qc": "npm run cli -- qc",
+    "publish": "npm run cli -- publish",
+    "analyze": "npm run cli -- analyze",
+    "feedback": "npm run cli -- feedback",
+    "approvals": "npm run cli -- approvals",
+    "approve": "npm run cli -- approve",
+    "reject": "npm run cli -- reject",
+    "status": "npm run cli -- status",
+    "retry": "npm run cli -- retry",
+    "demo": "npm run cli -- demo",
+    "db:init": "npm run cli -- db:init",
+    "youtube:auth": "npm run cli -- youtube:auth",
+    "build": "tsc -p tsconfig.build.json",
+    "start:prod": "node --disable-warning=ExperimentalWarning dist/cli/index.js start",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

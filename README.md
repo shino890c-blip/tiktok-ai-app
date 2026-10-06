@@ -34,3 +34,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## AI YouTube Company (sub-project)
+
+[`youtube-ai-company/`](./youtube-ai-company) is a standalone Node/TypeScript project: 5 AI agents + Supervisor + Watchdog that research, script, quality-check, publish (with human approval) and analyze YouTube Shorts. See its [README](./youtube-ai-company/README.md). It has its own `package.json` and is excluded from this app's `tsconfig.json` and ESLint config.

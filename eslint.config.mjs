@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone sub-project with its own toolchain
+    "youtube-ai-company/**",
   ]),
 ]);
 
