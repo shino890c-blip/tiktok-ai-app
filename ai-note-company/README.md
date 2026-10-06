@@ -39,6 +39,17 @@ Research → 企画 → 執筆 → 編集 → 品質チェック → note下書�
 
 必要なもの：Node.js **22.5以上**（組み込みの `node:sqlite` を使うため。ネイティブモジュールのビルドは不要です）。
 
+**最短手順（自分のPCで）：**
+
+```bash
+cd ai-note-company
+npm run setup
+```
+
+このコマンドは、依存関係のインストール → Chromiumのインストール → `.env` の作成（既にあれば上書きしません）→ ブラウザが開いてnoteにログイン（ここだけ人間が操作）→ セレクタの確認、までを続けて行います。
+
+手動で進める場合は次のとおりです。
+
 ```bash
 cd ai-note-company
 npm install
@@ -79,6 +90,7 @@ npm run status
 | `npm run analytics` | Analytics → Knowledge更新を今すぐ実行（`-- --all` で公開済み全記事を再分析） |
 | `npm run status` | Agent・Task・承認待ち・公開記事・Knowledgeを表示 |
 | `npm run approve` | 承認待ち一覧／`-- --id … --action approve\|reject\|regenerate\|edit` |
+| `npm run setup` | 初回セットアップ（依存関係・Chromium・`.env` → ログイン → セレクタ確認） |
 | `npm run login` | noteへの初回ログイン（人間が操作） |
 | `npm run dashboard` | Dashboardのみ |
 | `npm run test` / `npm run e2e` | ユニットテスト / E2Eテスト |

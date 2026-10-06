@@ -22,6 +22,7 @@
     "status": "tsx src/cli/index.ts status",
     "approve": "tsx src/cli/index.ts approve",
     "dashboard": "tsx src/cli/index.ts dashboard",
+    "setup": "npm install && npx playwright install chromium && tsx src/cli/index.ts setup",
     "login": "tsx src/cli/index.ts login",
     "test": "tsx --test --test-concurrency=1 tests/unit/*.test.ts",
     "e2e": "tsx --test --test-concurrency=1 tests/e2e/*.test.ts"

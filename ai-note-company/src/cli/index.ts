@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import path from "node:path";
 import { createCompany, type Company } from "../company";
-import { loadConfig } from "../config";
+import { loadConfig, projectRoot } from "../config";
 import { startDashboard } from "../dashboard/server";
 import { Logger } from "../logger";
 import type { ApprovalAction, Task, TaskType } from "../types";
@@ -79,6 +80,7 @@ const HELP = `AI Note Company CLI
   npm run analytics    Analytics → Knowledge更新を今すぐ実行（--all で全公開記事）
   npm run status       状態を表示
   npm run approve      承認待ち一覧 / -- --id <approval_id> --action approve|reject|regenerate|edit [--comment ..] [--title ..] [--price ..] [--tags a,b] [--body-file path]
+  npm run setup        初回セットアップ（依存関係・Chromium・.env → noteログイン → セレクタ確認）
   npm run login        noteへ人間がログインし、セッションを .auth/ に保存
   npm run dashboard    Dashboardのみ起動
   npx tsx src/cli/index.ts pipeline        1記事を承認待ちまで一気に実行
@@ -88,6 +90,41 @@ const HELP = `AI Note Company CLI
 async function main(): Promise<void> {
   const { cmd, flags } = parseArgs(process.argv.slice(2));
   if (cmd === "help" || flags.help) return void console.log(HELP);
+
+  if (cmd === "setup") {
+    // 1) .env (never overwrite an existing one) — must happen before loadConfig()
+    const root = projectRoot();
+    const envFile = path.join(root, ".env");
+    if (fs.existsSync(envFile)) console.log("✔ .env は既にあります（上書きしません）");
+    else {
+      fs.copyFileSync(path.join(root, ".env.example"), envFile);
+      console.log("✔ .env.example から .env を作成しました");
+    }
+    const config = loadConfig();
+    Logger.configure(config.logDir);
+    // 2) human login
+    console.log("\n▶ noteログイン: 開いたブラウザで、ご自身でログインしてください（パスワードはこのツールに渡りません）");
+    const { interactiveLogin } = await import("../note/auth/auth");
+    const r = await interactiveLogin(config, new Logger("login"));
+    console.log(`${r.ok ? "✔" : "✖"} ${r.message}`);
+    if (!r.ok) {
+      process.exitCode = 1;
+      return;
+    }
+    // 3) selector check (read-only)
+    console.log("\n▶ noteのUIセレクタを確認中（何も保存しません）...");
+    const { checkSelectors } = await import("../note/browser/checkSelectors");
+    const report = await checkSelectors(config);
+    for (const s of report) console.log(`${s.matched === null ? "✖" : "✔"} ${s.name}${s.matched !== null ? ` (candidate #${s.matched})` : ""}`);
+    const broken = report.filter((s) => s.matched === null);
+    console.log(
+      broken.length
+        ? `\n✖ ${broken.length}件のセレクタが見つかりません。この出力をClaude Codeに貼れば src/note/selectors.ts を修正します。`
+        : "\n✔ セットアップ完了。次: .env に RUN_MODE=live と LLM_API_KEY を設定 → npx tsx src/cli/index.ts pipeline（下書きまで。公開はしません）",
+    );
+    return;
+  }
+
   const config = loadConfig();
 
   if (cmd === "login") {
